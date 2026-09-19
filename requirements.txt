@@ -2,3 +2,6 @@ numpy
 scipy
 pandas
 pyarrow
+fastapi
+uvicorn[standard]
+qrcode

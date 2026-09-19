@@ -13,11 +13,13 @@ pip install -r requirements.txt
 python sim/build_neurons.py     # regenerates data/neurons.json (already included)
 python sim/brain.py 0.5         # smoke test + speed benchmark
 python sim/demo_autopilot.py    # brain steers a fly to a target, headless
+python server.py                # the game: beamer page on /, phones on /play (QR in terminal)
 ```
 
 What exists today: the simulator (`sim/brain.py`), a tiny body model (`sim/body.py`),
-the neuron lists (`data/neurons.json`) and the test results (`docs/findings.md`).
-What needs building: server, arena screen, phone controllers — see `CLAUDE.md`.
+the neuron lists (`data/neurons.json`), the test results (`docs/findings.md`) and the
+first playable slice: `server.py` + `web/` (arena on the beamer, hold-to-fire phone
+controller). What needs building: game rules, heats, host page, voting, brain view — see `CLAUDE.md`.
 
 ## Licences
 Simulator model: Shiu et al., MIT. FlyWire connectome data: **non-commercial use**, cite

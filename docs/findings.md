@@ -41,3 +41,27 @@ where left gives 138 Hz. Normalise per side in `body.py` if it makes the game un
 ## Speed (cloud box, 2 slow cores, pure numpy)
 dt=0.1 ms: ~4.8 s wall per simulated second. dt=0.25: ~2.0. **dt=0.5: ~1.0** with the same behaviour.
 Closed loop with 50 ms ticks ran at ~2x slower than real time there. Not yet measured on Apple Silicon.
+
+## Sustained input (tested 19 Sep 2026, dt = 0.5 ms, 50 ms ticks)
+The table above uses 400 ms windows. In the game a button is *held* for seconds, and the
+olfactory runaway is stochastic: it ignites with some probability per second that depends on
+the taste input rate. 5 seeds x 10 s per row, "runaway" = > 3000 neurons active in one tick.
+
+| Held input | Runaway trials | Feeding (MN9 mean > 30 Hz) |
+|---|---|---|
+| sugar both @80 Hz | **5/5** (after 0.2-6.9 s) | - |
+| sugar both @60 Hz | 1/5 (after 4 s) | 92% of ticks, 70 Hz |
+| sugar both @50 Hz | 0/5 | 88% of ticks, 67 Hz |
+| **sugar both @40 Hz** (game) | 0/5 | 79% of ticks, 60 Hz |
+| bitter both @150 Hz | **4/5** (after 1.1-8.5 s) | - |
+| bitter both @100 Hz | 0/5 | 0 |
+| **bitter both @60 Hz** (game) | 0/5 | 0 |
+| sugar 40 + bitter 60 | 0/5 | 0 (bitter still vetoes) |
+| eye_target L or R @150, shadow L or R @150, both eyes, both shadows | 0 in 8 s each | - |
+| all six buttons at once | runaway after ~0.4 s | - |
+
+Consequences: game rates are sugar 40 Hz, bitter 60 Hz (server.py BUTTONS). Everyone holding
+everything at once still faints the fly - that is the watchdog's job and it is funny.
+Per-tick active counts in normal play stay < 2000; the runaway sits at 7,000-9,000, so the
+3,000 watchdog threshold has margin on both sides. A runaway tick also costs ~2x brain time
+(85-90 ms), so the reset matters for the tick rate too.

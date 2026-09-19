@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fly by Committee</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg: #0b0e14; --panel: #151a23; --ink: #e8ecf1; --dim: #4b5563; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; overflow: hidden; }
+  #wrap { display: flex; flex-direction: column; height: 100%; }
+  header { display: flex; align-items: baseline; gap: 24px; padding: 10px 24px; }
+  header h1 { margin: 0; font-size: 28px; letter-spacing: 1px; }
+  header .status { margin-left: auto; color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+  #stage { flex: 1; position: relative; min-height: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #labels { display: flex; gap: 12px; padding: 12px 24px 18px; }
+  .label { flex: 1; text-align: center; padding: 18px 8px; border-radius: 14px; background: var(--panel);
+    font-size: 34px; font-weight: 800; letter-spacing: 2px; color: #fff; opacity: .18;
+    transition: opacity .12s, box-shadow .12s, transform .12s; }
+  .label.on { transform: scale(1.03); }
+  .label small { display: block; font-size: 14px; font-weight: 500; letter-spacing: 0; opacity: .7; margin-top: 4px; }
+  #faint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(11,14,20,.75); font-size: 72px; font-weight: 900; letter-spacing: 3px; text-align: center; }
+  #faint.show { display: flex; }
+  #faint small { display: block; font-size: 26px; font-weight: 400; margin-top: 12px; opacity: .8; }
+  #held { position: absolute; left: 18px; top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; color: #000; opacity: .25; }
+  .chip.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <h1>FLY BY COMMITTEE</h1>
+    <span id="conn" class="status">connecting…</span>
+  </header>
+  <div id="stage">
+    <canvas id="arena"></canvas>
+    <div id="held"></div>
+    <div id="faint">THE FLY FAINTED<small>too much at once — back in a moment</small></div>
+  </div>
+  <div id="labels">
+    <div class="label" id="l-turnleft"  style="background:#3b82f6">TURN LEFT<small>&nbsp;</small></div>
+    <div class="label" id="l-turnright" style="background:#f59e0b">TURN RIGHT<small>&nbsp;</small></div>
+    <div class="label" id="l-panic"     style="background:#ef4444">PANIC!<small>&nbsp;</small></div>
+    <div class="label" id="l-hungry"    style="background:#22c55e">HUNGRY<small>&nbsp;</small></div>
+    <div class="label" id="l-walk"      style="background:#a855f7">WALK<small>&nbsp;</small></div>
+  </div>
+</div>
+<script type="module">
+import { connect } from "/static/ws.js";
+
+// Role colours: must match play.html so a phone's colour = the fly's body part on screen.
+const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9f0", right_shadow: "#c77dff", sugar: "#8ac926", bitter: "#ffd166" };
+const NAMES = { left_eye: "Left eye", right_eye: "Right eye", left_shadow: "Left shadow", right_shadow: "Right shadow", sugar: "Sugar", bitter: "Bitter" };
+// Output rate (Hz) at which a label is fully lit. From docs/findings.md.
+const FULL = { turnleft: 140, turnright: 70, panic: 150, hungry: 60, walk: 110 };
+
+const canvas = document.getElementById("arena"), ctx = canvas.getContext("2d");
+const heldEl = document.getElementById("held"), faintEl = document.getElementById("faint"), connEl = document.getElementById("conn");
+for (const b of Object.keys(COLOURS)) {
+  const c = document.createElement("span"); c.className = "chip"; c.id = "chip-" + b; c.textContent = NAMES[b];
+  c.style.background = COLOURS[b]; heldEl.appendChild(c);
+}
+
+let state = null, trail = [], faintTimer = null, lastFrame = performance.now(), frames = 0, fps = 0;
+
+function setLabel(id, hz, full) {
+  const el = document.getElementById("l-" + id);
+  const v = Math.min(1, hz / full);
+  el.style.opacity = 0.18 + 0.82 * v;
+  el.style.boxShadow = v > 0.3 ? `0 0 ${30 * v}px ${el.style.background}` : "none";
+  el.classList.toggle("on", v > 0.3);
+  el.querySelector("small").textContent = hz > 0 ? hz + " Hz" : " ";
+}
+
+function resize() {
+  const r = canvas.getBoundingClientRect();
+  canvas.width = Math.round(r.width * devicePixelRatio); canvas.height = Math.round(r.height * devicePixelRatio);
+}
+addEventListener("resize", resize); resize();
+
+function draw() {
+  requestAnimationFrame(draw);
+  frames++; const now = performance.now();
+  if (now - lastFrame > 1000) { fps = frames; frames = 0; lastFrame = now; }
+  const W = canvas.width, H = canvas.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0b0e14"; ctx.fillRect(0, 0, W, H);
+  if (!state) return;
+  const aw = state.arena.w, ah = state.arena.h;
+  const s = Math.min((W - 40 * devicePixelRatio) / aw, (H - 40 * devicePixelRatio) / ah);
+  const ox = (W - aw * s) / 2, oy = (H + ah * s) / 2;
+  // World -> screen: body.py uses maths coordinates (y up, heading counter-clockwise), so flip y.
+  ctx.setTransform(s, 0, 0, -s, ox, oy);
+  ctx.fillStyle = "#11161f"; ctx.fillRect(0, 0, aw, ah);
+  ctx.strokeStyle = "#1f2937"; ctx.lineWidth = 2 / s; ctx.strokeRect(0, 0, aw, ah);
+  ctx.beginPath();
+  for (let x = 200; x < aw; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, ah); }
+  for (let y = 200; y < ah; y += 200) { ctx.moveTo(0, y); ctx.lineTo(aw, y); }
+  ctx.stroke();
+  // trail
+  if (trail.length > 1) {
+    ctx.lineWidth = 3; ctx.lineCap = "round";
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1], b = trail[i];
+      if (Math.hypot(b.x - a.x, b.y - a.y) > 300) continue;   // wrapped around the arena edge
+      ctx.strokeStyle = `rgba(232,236,241,${0.5 * i / trail.length})`;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+  }
+  const f = state.fly, held = new Set(state.held);
+  ctx.translate(f.x, f.y); ctx.rotate(f.heading);
+  // shadows looming on a side
+  for (const [btn, side] of [["left_shadow", 1], ["right_shadow", -1]]) if (held.has(btn)) {
+    ctx.fillStyle = "rgba(76,201,240,.18)"; ctx.beginPath(); ctx.ellipse(-10, side * 70, 60, 40, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // body
+  const glow = state.fainted ? "#6b7280" : "#e8ecf1";
+  ctx.fillStyle = "#3a3f4b"; ctx.beginPath(); ctx.ellipse(-22, 0, 26, 16, 0, 0, Math.PI * 2); ctx.fill();   // abdomen
+  ctx.fillStyle = "#2b2f3a"; ctx.beginPath(); ctx.ellipse(-30, 24, 30, 10, 0.25, 0, Math.PI * 2); ctx.fill(); // wings
+  ctx.beginPath(); ctx.ellipse(-30, -24, 30, 10, -0.25, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.ellipse(6, 0, 18, 13, 0, 0, Math.PI * 2); ctx.fill();          // thorax
+  ctx.fillStyle = "#b8bec8"; ctx.beginPath(); ctx.arc(28, 0, 12, 0, Math.PI * 2); ctx.fill();               // head
+  ctx.fillStyle = held.has("left_eye") ? COLOURS.left_eye : "#7a2035"; ctx.beginPath(); ctx.arc(32, 8, 6, 0, Math.PI * 2); ctx.fill();   // left eye (+y = fly's left)
+  ctx.fillStyle = held.has("right_eye") ? COLOURS.right_eye : "#7a4a15"; ctx.beginPath(); ctx.arc(32, -8, 6, 0, Math.PI * 2); ctx.fill();
+  if (f.feeding) { ctx.strokeStyle = COLOURS.sugar; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(38, 0); ctx.lineTo(62, 0); ctx.stroke(); } // proboscis out
+  if (f.jumped) { ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 70, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+requestAnimationFrame(draw);
+
+connect({
+  onOpen() { connEl.textContent = "connected"; },
+  onClose() { connEl.textContent = "reconnecting…"; },
+  onMessage(m) {
+    if (m.type === "fainted") {
+      faintEl.classList.add("show"); clearTimeout(faintTimer);
+      faintTimer = setTimeout(() => faintEl.classList.remove("show"), m.seconds * 1000);
+      trail = [];
+    }
+    if (m.type !== "state") return;
+    state = m;
+    trail.push({ x: m.fly.x, y: m.fly.y }); if (trail.length > 120) trail.shift();
+    const o = m.outputs;
+    setLabel("turnleft", o.turn.left, FULL.turnleft);
+    setLabel("turnright", o.turn.right, FULL.turnright);
+    setLabel("panic", (o.escape.left + o.escape.right) / 2, FULL.panic);
+    setLabel("hungry", (o.feed.left + o.feed.right) / 2, FULL.hungry);
+    setLabel("walk", (o.walk.left + o.walk.right) / 2, FULL.walk);
+    const held = new Set(m.held);
+    for (const b of Object.keys(COLOURS)) document.getElementById("chip-" + b).classList.toggle("on", held.has(b));
+    connEl.textContent = `${m.players.length} phone${m.players.length === 1 ? "" : "s"} · ${m.active} neurons active · sim ${m.perf.brain_ms} ms/tick`;
+  },
+});
+</script>
+</body>
+</html>

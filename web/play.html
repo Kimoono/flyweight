@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fly by Committee — play</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0e14">
+<style>
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0b0e14; color: #e8ecf1; overflow: hidden; touch-action: none; overscroll-behavior: none;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  .screen { display: none; height: 100%; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+  .screen.show { display: flex; }
+  h1 { font-size: 22px; margin: 4px 0 14px; letter-spacing: 1px; }
+  p.hint { color: #9aa3ad; margin: 0 0 16px; font-size: 15px; }
+  .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
+  .role { border: 0; border-radius: 18px; font-size: 22px; font-weight: 800; color: #000; }
+  .role.wide { grid-column: 1 / -1; }
+  .top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .top .who { font-size: 18px; font-weight: 800; }
+  .top .conn { margin-left: auto; font-size: 13px; color: #9aa3ad; }
+  .top .change { background: none; border: 1px solid #374151; color: #9aa3ad; border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+  .buttons { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  .fire { flex: 1; border: 0; border-radius: 28px; font-size: 40px; font-weight: 900; letter-spacing: 2px; color: #000;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; touch-action: none;
+    box-shadow: inset 0 -10px 0 rgba(0,0,0,.25); transition: transform .05s, filter .05s; }
+  .fire small { font-size: 16px; font-weight: 600; letter-spacing: 0; opacity: .75; margin-top: 8px; }
+  .fire.down { transform: scale(.97); filter: brightness(1.25); box-shadow: inset 0 4px 0 rgba(0,0,0,.25), 0 0 40px currentColor; }
+  #faint { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
+    background: rgba(11,14,20,.85); font-size: 34px; font-weight: 900; padding: 24px; }
+  #faint.show { display: flex; }
+</style>
+</head>
+<body>
+<section id="pick" class="screen show">
+  <h1>YOU ARE A SENSE</h1>
+  <p class="hint">Pick what part of the fly you are. Nobody steers — the brain decides.</p>
+  <div class="roles" id="roles"></div>
+</section>
+<section id="game" class="screen">
+  <div class="top"><span class="who" id="who"></span><span class="conn" id="conn">connecting…</span><button class="change" id="change">change</button></div>
+  <div class="buttons" id="buttons"></div>
+</section>
+<div id="faint">THE FLY FAINTED<br><small style="font-size:18px;font-weight:400">let go of everything for a moment</small></div>
+<script type="module">
+import { connect } from "/static/ws.js";
+
+const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9f0", right_shadow: "#c77dff", sugar: "#8ac926", bitter: "#ffd166", tongue: "#8ac926" };
+const ROLES = [
+  { id: "left_eye", label: "Left eye", buttons: [["left_eye", "LEFT EYE", "I see something on the left"]] },
+  { id: "right_eye", label: "Right eye", buttons: [["right_eye", "RIGHT EYE", "I see something on the right"]] },
+  { id: "left_shadow", label: "Left shadow", buttons: [["left_shadow", "LEFT SHADOW", "something is coming from the left!"]] },
+  { id: "right_shadow", label: "Right shadow", buttons: [["right_shadow", "RIGHT SHADOW", "something is coming from the right!"]] },
+  { id: "tongue", label: "Tongue", wide: true, buttons: [["sugar", "SUGAR", "mmm, tastes sweet"], ["bitter", "BITTER", "yuck!"]] },
+];
+
+const $ = (id) => document.getElementById(id);
+let role = null, sock = null, held = new Set(), heartbeat = null;
+
+// ---- role picker
+for (const r of ROLES) {
+  const b = document.createElement("button");
+  b.className = "role" + (r.wide ? " wide" : ""); b.textContent = r.label; b.style.background = COLOURS[r.id];
+  b.addEventListener("click", () => { buzz(30); chooseRole(r); });
+  $("roles").appendChild(b);
+}
+$("change").addEventListener("click", () => { releaseAll(); role = null; sock.send({ type: "join", role: null }); show("pick"); try { localStorage.removeItem("role"); } catch {} });
+
+function show(id) { for (const s of document.querySelectorAll(".screen")) s.classList.toggle("show", s.id === id); }
+
+function chooseRole(r) {
+  role = r; try { localStorage.setItem("role", r.id); } catch {}
+  $("who").textContent = r.label.toUpperCase(); $("who").style.color = COLOURS[r.id];
+  const box = $("buttons"); box.innerHTML = "";
+  for (const [btn, text, hint] of r.buttons) {
+    const el = document.createElement("div");
+    el.className = "fire"; el.style.background = COLOURS[btn]; el.style.color = COLOURS[btn];
+    el.innerHTML = `<span style="color:#000">HOLD: ${text}</span><small style="color:#000">${hint}</small>`;
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); press(btn, el); });
+    for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) el.addEventListener(ev, () => release(btn, el));
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
+    box.appendChild(el);
+  }
+  sock.send({ type: "join", role: r.id });
+  show("game"); wakeLock();
+}
+
+// ---- hold-to-fire
+function press(btn, el) {
+  if (held.has(btn)) return;
+  held.add(btn); el.classList.add("down"); buzz(40);
+  sock.send({ type: "press", button: btn });
+  if (!heartbeat) heartbeat = setInterval(() => { for (const b of held) sock.send({ type: "press", button: b }); }, 500);
+}
+function release(btn, el) {
+  if (!held.has(btn)) return;
+  held.delete(btn); el.classList.remove("down"); buzz(15);
+  sock.send({ type: "release", button: btn });
+  if (!held.size) { clearInterval(heartbeat); heartbeat = null; }
+}
+function releaseAll() {
+  held.clear(); clearInterval(heartbeat); heartbeat = null;
+  for (const el of document.querySelectorAll(".fire")) el.classList.remove("down");
+  sock.send({ type: "release_all" });
+}
+function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
+
+// no zoom / scroll / long-press menus anywhere
+for (const ev of ["touchmove", "gesturestart", "gesturechange", "dblclick"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); else wakeLock(); });
+addEventListener("blur", releaseAll);
+
+// ---- keep the screen on
+let lock = null;
+async function wakeLock() {
+  try { if (navigator.wakeLock && (!lock || lock.released)) lock = await navigator.wakeLock.request("screen"); } catch {}
+}
+
+// ---- socket
+sock = connect({
+  onOpen() { $("conn").textContent = "connected"; if (role) { sock.send({ type: "join", role: role.id }); for (const b of held) sock.send({ type: "press", button: b }); } },
+  onClose() { $("conn").textContent = "reconnecting…"; },
+  onMessage(m) {
+    if (m.type === "fainted") { $("faint").classList.add("show"); setTimeout(() => $("faint").classList.remove("show"), m.seconds * 1000); }
+  },
+});
+try { const saved = localStorage.getItem("role"); const r = ROLES.find((x) => x.id === saved); if (r) chooseRole(r); } catch {}
+</script>
+</body>
+</html>
