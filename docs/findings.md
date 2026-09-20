@@ -89,3 +89,37 @@ hits for 130k neurons every 0.5 ms step costs ~70 ms extra per 50 ms tick (100 v
 which would break the 20 ticks/s loop. Conclusion: the fly is a reflex machine; idle
 "personality" has to come from the world (things to see) or from many players in conflict,
 not from spontaneous brain activity.
+
+## Neuron Jenga (20 Sep 2026): what breaks when you pull a block
+`Brain.silence(indices)` kills neurons (they never fire, their output synapses are zeroed);
+`Brain.restore()` undoes it. Blocks are defined in `sim/build_blocks.py` from the annotation
+classes. Reflex test = 400 ms of one stimulus from a fresh brain: eye L/R 150 Hz -> DNa02
+L/R, shadow L 150 Hz -> mean DNp01, sugar 40 Hz -> mean MN9, motion 150 Hz -> mean DNp09.
+Intact baseline: 140 / 88 / 136 / 60 / 69 Hz. Verdict OK >= 50% of baseline, WEAK >= 20%,
+BROKEN below that.
+
+| Block pulled | Neurons | TURN L | TURN R | PANIC! | HUNGRY | WALK |
+|---|---|---|---|---|---|---|
+| The giant fibre (DNp01) | 2 | ok | ok | **broken** | ok | ok |
+| The steering pair (DNa02) | 2 | **broken** | **broken** | ok | ok | ok |
+| All brain-to-body cables (descending) | 1,299 | broken | broken | broken | ok | broken |
+| Mouth & neck motor neurons | 105 | ok | ok | ok | **broken** | ok |
+| Taste sensors | 408 | ok | ok | ok | **broken** | ok |
+| Object detectors (visual projection) | 8,038 | broken | broken | broken | ok | broken |
+| The optic lobes | 77,530 | ok | ok | ok | ok | ok |
+| Memory centre (Kenyon cells) | 5,177 | ok | ok | ok | ok | ok |
+| Dopamine neurons | 331 | ok | ok | ok | ok | ok |
+| Smell centre | 3,431 | ok | ok | ok | ok | ok |
+| Navigation centre (central complex) | 2,875 | ok | ok (60) | ok | ok (49) | ok |
+| Touch & hearing | 2,656 | ok | ok | ok | ok (32) | ok |
+| The whole LEFT half | 69,504 | broken | ok | broken | broken | ok |
+| The whole RIGHT half | 68,917 | ok | broken | ok (80) | broken | ok (48) |
+| Random 5%, cumulative | 5% / 10% / 15% | ok | ok | ok | weak/ok/weak | ok |
+| Random 5%, 4th pull | 20% | **broken** | **broken** | ok | **broken** | ok |
+
+Lessons for the host: half the brain (the optic lobes) can go and nothing changes, because the
+game injects its senses at the object-detector neurons behind the optic lobes; two neurons in
+the right place break a whole reflex; the memory, smell, dopamine and navigation centres do
+nothing for reflexes; feeding needs both halves (the tongue's motor neuron is wired from both
+sides); random damage is tolerated up to ~15% and collapses around 20%, so a Jenga round of
+"random 5%" pulls lasts 3-4 turns. A check takes ~1.6 s of wall time and pauses the game.

@@ -31,6 +31,15 @@
   #held { position: absolute; left: 18px; top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
   .chip { padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; color: #000; opacity: .25; }
   .chip.on { opacity: 1; }
+  #jenga { position: absolute; right: 18px; top: 12px; width: 340px; background: rgba(21,26,35,.92); border-radius: 14px;
+    padding: 12px 16px; display: none; font-size: 15px; }
+  #jenga.show { display: block; }
+  #jenga h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: 2px; color: #fbbf24; }
+  #jenga .dead { color: #9aa3ad; margin-bottom: 8px; }
+  #jenga ul { margin: 0 0 8px; padding-left: 18px; color: #e8ecf1; } #jenga li { margin: 2px 0; }
+  #jenga table { border-collapse: collapse; width: 100%; } #jenga td { padding: 3px 4px; font-weight: 800; }
+  .v-OK { color: #22c55e; } .v-WEAK { color: #fbbf24; } .v-BROKEN { color: #ef4444; } .v-na { color: #6b7280; }
+  #jenga .hz { color: #9aa3ad; font-weight: 400; font-size: 13px; text-align: right; }
   #brain-top { position: absolute; left: 14px; right: 14px; top: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
   #brain-top .title { font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #9aa3ad; }
   #brain-top .spacer { flex: 1; }
@@ -56,6 +65,7 @@
       <canvas id="arena"></canvas>
       <div id="held"></div>
       <div id="faint">THE FLY FAINTED<small>too much at once — back in a moment</small></div>
+      <div id="jenga"><h2>NEURON JENGA</h2><div class="dead"></div><ul></ul><div class="board"></div></div>
     </div>
     <div id="brain-wrap" class="panel">
       <canvas id="brain"></canvas>
@@ -127,6 +137,7 @@ const CLASSES = [
   { key: "walk", group: ["outputs", "walk", "*"], colour: [168, 85, 247], label: "WALK" },
 ];
 let pos = null, N = 0, cls = null, landmarks = [], bounds = null, flipX = false, bg = null, bgW = 0, bgH = 0;
+let dead = null;   // Uint8Array(N): 1 = silenced by Neuron Jenga (drawn as a hole in the brain)
 
 async function loadBrain() {
   const [buf, groups] = await Promise.all([fetch("/positions.bin").then((r) => r.arrayBuffer()), fetch("/groups.json").then((r) => r.json())]);
@@ -143,6 +154,7 @@ async function loadBrain() {
   // Show the fly's left on the viewer's left: compare mean x of the two eye groups.
   const mx = (idx) => idx.reduce((a, i) => a + pos[3 * i], 0) / idx.length;
   flipX = mx(groups.senses.eye_target.left) > mx(groups.senses.eye_target.right);
+  if (pendingDead) { dead = new Uint8Array(N); for (let j = 1; j < pendingDead.length; j++) dead[pendingDead[j]] = 1; }
   bg = null;
 }
 loadBrain();
@@ -167,6 +179,7 @@ function renderBackground(W, H) {
     if (isNaN(pos[3 * i])) continue;
     const [x, y] = project(i), px = x | 0, py = y | 0;
     if (px < 0 || py < 0 || px >= W || py >= H) continue;
+    if (dead && dead[i]) continue;                       // a pulled neuron leaves a hole
     const o = 4 * (py * W + px), col = CLASSES[cls[i]].colour, a = cls[i] ? 0.55 : 0.16;
     d[o] = d[o] * (1 - a) + col[0] * a; d[o + 1] = d[o + 1] * (1 - a) + col[1] * a; d[o + 2] = d[o + 2] * (1 - a) + col[2] * a; d[o + 3] = 255;
   }
@@ -203,11 +216,16 @@ function renderBackground(W, H) {
 // ------------------------------------------------------------------ spike buffer + clock
 // Each tick: { t: sim ms at tick start, ev: Uint32Array(chunk << 18 | index), held, outputs }
 const BUFFER_MS = 4000;
-let ticks = [], latestT = -1, shownT = -1, lastFrame = performance.now();
+let ticks = [], latestT = -1, shownT = -1, lastFrame = performance.now(), pendingDead = null;
 let replay = null;   // { frames, start, end, shownT }
 
 function onSpikes(buf) {
   const a = new Uint32Array(buf), tick = a[0];
+  if (tick === 0xFFFFFFFF) {                              // Neuron Jenga: list of dead neurons
+    dead = N ? new Uint8Array(N) : null;
+    if (dead) for (let j = 1; j < a.length; j++) dead[a[j]] = 1;
+    pendingDead = a; bg = null; return;
+  }
   const t = tick * TICK_MS;
   ticks.push({ t, tick, ev: a.subarray(1), held: [], outputs: null });
   latestT = t;
@@ -332,6 +350,18 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
+function renderJenga(j) {
+  const el = $("jenga"), show = j.pulls.length || j.checking || j.check;
+  el.classList.toggle("show", !!show); if (!show) return;
+  el.querySelector(".dead").textContent = `${j.dead.toLocaleString()} of 138,639 neurons removed`;
+  el.querySelector("ul").innerHTML = j.pulls.map((p) => `<li>${p.label} <span style="color:#9aa3ad">(${p.n.toLocaleString()})</span></li>`).join("");
+  const board = el.querySelector(".board");
+  if (j.checking) board.innerHTML = `<div style="color:#fbbf24;font-weight:800">TESTING THE REFLEXES…</div>`;
+  else if (j.check) board.innerHTML = "<table>" + Object.values(j.check).map((c) =>
+    `<tr><td>${c.label}</td><td class="v-${c.verdict.replace('/', '')}">${c.verdict}</td><td class="hz">${c.hz} / ${c.base} Hz</td></tr>`).join("") + "</table>";
+  else board.innerHTML = "";
+}
+
 // ------------------------------------------------------------------ socket
 const sock = connect({
   onOpen() { $("conn").textContent = "connected"; },
@@ -342,6 +372,7 @@ const sock = connect({
       faintTimer = setTimeout(() => $("faint").classList.remove("show"), m.seconds * 1000);
       trail = [];
     }
+    if (m.type === "jenga") { renderJenga(m); return; }
     if (m.type !== "state") return;
     state = m;
     const f = ticks.find((x) => x.tick === m.tick); if (f) { f.held = m.held; f.outputs = m.outputs; }

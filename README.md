@@ -12,15 +12,17 @@ pip install -r requirements.txt
 ./fetch_data.sh                 # connectome + annotations, ~225 MB
 python sim/build_neurons.py     # regenerates data/neurons.json (already included)
 python sim/build_positions.py   # regenerates data/positions.bin for the brain view (already included)
+python sim/build_blocks.py      # regenerates data/blocks.json for Neuron Jenga (already included)
 python sim/brain.py 0.5         # smoke test + speed benchmark
 python sim/demo_autopilot.py    # brain steers a fly to a target, headless
-python server.py                # the game: beamer page on /, phones on /play (QR in terminal)
+python server.py                # the game: beamer on /, phones on /play (QR in terminal), Neuron Jenga on /host
 ```
 
 What exists today: the simulator (`sim/brain.py`), a tiny body model (`sim/body.py`),
 the neuron lists (`data/neurons.json`), the test results (`docs/findings.md`) and the
 first playable slice: `server.py` + `web/` (arena on the beamer, hold-to-fire phone
-controller). What needs building: game rules, heats, host page, voting, brain view — see `CLAUDE.md`.
+controller), the live brain view with slow-motion replay, and Neuron Jenga (`/host`).
+What needs building: game rules, heats, voting — see `CLAUDE.md`.
 
 ## Licences
 Simulator model: Shiu et al., MIT. FlyWire connectome data: **non-commercial use**, cite

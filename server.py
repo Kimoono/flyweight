@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import queue
 import socket
 import subprocess
 import sys
@@ -53,6 +54,17 @@ BUTTONS = {
     "sugar":        ("sugar",      "both",  40),
     "bitter":       ("bitter",     "both",  60),
 }
+# Neuron Jenga reflex tests: 400 ms of one stimulus from a fresh brain, read one output.
+# Baseline is measured at startup on the intact brain; verdict = fraction of baseline.
+REFLEX_TESTS = [
+    ("turnleft",  "TURN LEFT",  {"eye_target": {"left": 150}},              ("turn", "left")),
+    ("turnright", "TURN RIGHT", {"eye_target": {"right": 150}},             ("turn", "right")),
+    ("panic",     "PANIC!",     {"shadow": {"left": 150}},                  ("escape", "mean")),
+    ("hungry",    "HUNGRY",     {"sugar": {"left": 40, "right": 40}},       ("feed", "mean")),
+    ("walk",      "WALK",       {"motion": {"left": 150, "right": 150}},    ("walk", "mean")),
+]
+REFLEX_MS = 400
+
 ROLES = {
     "left_eye":     ["left_eye"],
     "right_eye":    ["right_eye"],
@@ -141,6 +153,79 @@ class Game:
         self.faints = 0
         self.tick = 0
         self.stop = threading.Event()
+        # Neuron Jenga
+        self.blocks = {b["id"]: b for b in json.loads((ROOT / "data" / "blocks.json").read_text())["blocks"]}
+        self.cmds: queue.Queue = queue.Queue()      # host commands, applied inside the sim thread
+        self.pulls: list[dict] = []
+        self.checking = False
+        self.check: dict | None = None
+        t0 = time.time()
+        self.baseline = self.run_reflex_tests()
+        print("reflex baseline (intact brain, Hz): " + "  ".join(f"{k} {v:.0f}" for k, v in self.baseline.items())
+              + f"  ({time.time() - t0:.1f}s)", flush=True)
+
+    # ---- Neuron Jenga
+    def run_reflex_tests(self) -> dict:
+        res = {}
+        for key, _label, inp, (out_name, side) in REFLEX_TESTS:
+            self.brain.reset(); self.brain.set_input(inp)
+            out, _ = self.brain.step(REFLEX_MS)
+            o = out[out_name]
+            res[key] = (o["left"] + o["right"]) / 2 if side == "mean" else o[side]
+        self.brain.reset()
+        return res
+
+    def jenga_state(self) -> dict:
+        return {"type": "jenga", "pulls": self.pulls, "dead": int(self.brain.dead.sum()),
+                "checking": self.checking, "check": self.check,
+                "blocks": [{"id": b["id"], "label": b["label"], "desc": b["desc"],
+                            "n": len(b["indices"]) if "indices" in b else int(b["random"] * self.brain.n),
+                            "random": "random" in b, "pulled": any(p["id"] == b["id"] for p in self.pulls)}
+                           for b in self.blocks.values()]}
+
+    def dead_frame(self) -> bytes:
+        """Binary frame for the brain view: uint32 0xFFFFFFFF marker, then uint32 dead neuron indices."""
+        return np.uint32(0xFFFFFFFF).tobytes() + self.brain.dead_idx.astype(np.uint32).tobytes()
+
+    def apply_commands(self):
+        changed = False
+        while True:
+            try:
+                action, block_id = self.cmds.get_nowait()
+            except queue.Empty:
+                break
+            if action == "pull" and block_id in self.blocks:
+                b = self.blocks[block_id]
+                if "random" in b:
+                    alive = np.flatnonzero(~self.brain.dead)
+                    idx = self.sample_rng.choice(alive, min(len(alive), int(b["random"] * self.brain.n)), replace=False)
+                else:
+                    idx = np.asarray(b["indices"], np.int64)
+                n = self.brain.silence(idx)
+                self.pulls.append({"id": b["id"], "label": b["label"], "n": n})
+                self.check = None
+                print(f"JENGA: pulled {b['label']} ({n} neurons, {int(self.brain.dead.sum())} dead in total)", flush=True)
+                changed = True
+            elif action == "restore":
+                self.brain.restore(); self.pulls = []; self.check = None
+                print("JENGA: whole brain restored", flush=True)
+                changed = True
+            elif action == "check":
+                self.checking = True
+                hub.send_from_thread(self.jenga_state())
+                res = self.run_reflex_tests()
+                self.check = {}
+                for key, label, _inp, _o in REFLEX_TESTS:
+                    base = self.baseline[key]
+                    ratio = res[key] / base if base > 5 else None
+                    verdict = "n/a" if ratio is None else "OK" if ratio >= 0.5 else "WEAK" if ratio >= 0.2 else "BROKEN"
+                    self.check[key] = {"label": label, "hz": round(res[key]), "base": round(base), "verdict": verdict}
+                self.checking = False
+                print("JENGA check: " + "  ".join(f"{c['label']} {c['verdict']} ({c['hz']}/{c['base']} Hz)" for c in self.check.values()), flush=True)
+                changed = True
+        if changed:
+            hub.send_from_thread(self.dead_frame())
+            hub.send_from_thread(self.jenga_state())
 
     def step_tick(self):
         """brain.step(TICK_MS) in CHUNK_MS pieces so the brain view can show spike order inside a
@@ -167,6 +252,7 @@ class Game:
         next_t = time.perf_counter()
         while not self.stop.is_set():
             t_start = time.perf_counter()
+            self.apply_commands()
             held = inputs.snapshot()
             now = time.monotonic()
             fainted = now < self.fainted_until
@@ -258,6 +344,11 @@ async def play():
     return FileResponse(WEB / "play.html")
 
 
+@app.get("/host")
+async def host():
+    return FileResponse(WEB / "host.html")
+
+
 @app.get("/favicon.ico")
 async def favicon():
     from fastapi.responses import Response
@@ -283,6 +374,8 @@ async def ws_endpoint(ws: WebSocket):
     cid = id(ws)
     hub.clients[cid] = ws
     try:
+        await ws.send_text(json.dumps(game.jenga_state()))
+        await ws.send_bytes(game.dead_frame())
         while True:
             msg = json.loads(await ws.receive_text())
             t = msg.get("type")
@@ -300,6 +393,8 @@ async def ws_endpoint(ws: WebSocket):
                 inputs.release(cid, msg.get("button"))
             elif t == "release_all":
                 inputs.release(cid)
+            elif t == "jenga":
+                game.cmds.put((msg.get("action"), msg.get("block")))
             elif t == "ping":
                 await ws.send_text('{"type":"pong"}')
     except (WebSocketDisconnect, RuntimeError):
@@ -342,6 +437,7 @@ def print_urls():
     print("\n" + "=" * 60)
     print(f"  BEAMER   {url}/")
     print(f"  PHONES   {url}/play")
+    print(f"  HOST     {url}/host   (Neuron Jenga)")
     if len(ips) > 1:
         print("  other addresses: " + ", ".join(f"http://{ip}:{PORT}" for ip in ips[1:]))
     print("=" * 60)

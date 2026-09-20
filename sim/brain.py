@@ -72,6 +72,30 @@ class Brain:
         self.t = 0
         self.ex = np.empty(0, np.int64)      # stimulated neuron indices
         self.ex_p = np.empty(0, np.float32)  # per-step spike probability
+        if not hasattr(self, "dead"):        # silenced neurons survive reset(); see silence()
+            self.dead = np.zeros(n, bool); self.alive = ~self.dead; self.dead_idx = np.empty(0, np.int64); self._saved = []
+
+    def _columns(self, idx):
+        """Flat positions in W.data of the output synapses of neurons `idx` (CSC columns)."""
+        lo = self.W.indptr[idx]; ln = self.W.indptr[idx + 1] - lo
+        return np.repeat(lo - np.r_[0, np.cumsum(ln)[:-1]], ln) + np.arange(int(ln.sum()))
+
+    def silence(self, indices):
+        """Neuron Jenga: kill these neurons. They never spike again (masked out of spike detection;
+        their voltage is left alone, it stays bounded by the leak) and their output synapses are
+        zeroed (columns of W). Reversible with restore(). Returns how many were newly killed."""
+        idx = np.unique(np.asarray(indices, np.int64)); idx = idx[~self.dead[idx]]
+        if len(idx):
+            sel = self._columns(idx)
+            self._saved.append((idx, self.W.data[sel].copy())); self.W.data[sel] = 0
+            self.dead[idx] = True; self.alive = ~self.dead; self.dead_idx = np.flatnonzero(self.dead)
+        return int(len(idx))
+
+    def restore(self):
+        """Undo every silence() call."""
+        for idx, data in self._saved:
+            self.W.data[self._columns(idx)] = data
+        self._saved = []; self.dead[:] = False; self.alive = ~self.dead; self.dead_idx = np.empty(0, np.int64)
 
     def set_input(self, rates: dict, extra: dict | None = None):
         """rates = {"sugar": {"left": 80, "right": 80}, ...} in Hz.
@@ -112,7 +136,7 @@ class Brain:
                     sel = np.repeat(lo - np.r_[0, np.cumsum(ln)[:-1]], ln) + np.arange(tot)
                     rows = W.indices[sel]
                     np.add.at(g, rows, W.data[sel] * act[rows])
-            spk = np.flatnonzero(v > V_TH)
+            spk = np.flatnonzero((v > V_TH) & self.alive) if len(self.dead_idx) else np.flatnonzero(v > V_TH)
             v[spk] = V_RESET; g[spk] = 0; ref[spk] = self.rfc
             ref[self.ex] = 0                      # stimulated neurons: no refractory (as upstream)
             counts[spk] += 1
