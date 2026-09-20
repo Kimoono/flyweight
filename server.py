@@ -278,6 +278,7 @@ class Game:
                 active = 0
                 brain_ms = 0.0
                 ev = np.empty(0, np.uint32)
+                rates = {}
             else:
                 # what the world does to the senses (sim/senses.py) + what the phones add (direct lines)
                 rates, self.senses = encode(self.fly, self.world.drops, self.world.hazards(self.fly), self.world.on_drop(self.fly))
@@ -297,8 +298,9 @@ class Game:
                     print(f"WATCHDOG: {active} active neurons in one tick -> brain reset, fly fainted", flush=True)
                     hub.send_from_thread({"type": "fainted", "active": active, "seconds": FAINT_S})
                 else:
-                    self.fly.update(out, TICK_MS / 1000.0)
-                    self.world.update(self.fly, TICK_MS / 1000.0, self.tick * TICK_MS / 1000.0)   # walls, eating, spider
+                    if self.world.fly_dead <= 0:
+                        self.fly.update(out, TICK_MS / 1000.0)
+                    self.world.update(self.fly, TICK_MS / 1000.0, self.tick * TICK_MS / 1000.0)   # walls, eating, spider, respawn
             self.tick += 1
             tick_ms = (time.perf_counter() - t_start) * 1000
             # binary frame for the brain view: uint32 tick, then uint32 events (chunk << 18 | neuron index)
@@ -313,9 +315,11 @@ class Game:
                 "active": active,
                 "held": sorted(held),
                 "senses": self.senses if not fainted else [],
+                "rates": {f"{g}_{s}": round(hz) for g, sides in (rates.items() if not fainted else []) for s, hz in sides.items()},
                 "world": {"drops": [[round(x), round(y)] for x, y in self.world.drops],
                           "spider": [round(self.world.spider[0]), round(self.world.spider[1])],
-                          "spider_rest": self.world.spider_rest > 0,
+                          "spider_rest": self.world.spider_rest > 0, "spider_closing": self.world.spider_closing,
+                          "fly_dead": self.world.fly_dead > 0,
                           "eating": round(self.world.eating / 1.5, 2),
                           "score": self.world.score, "caught": self.world.caught,
                           "events": [e for t_ev, e in self.world.events if t_ev > (self.tick - 20) * TICK_MS / 1000.0]},

@@ -143,3 +143,21 @@ mattered: vision range 700 px and 5 drops (with 450 px / 3 drops the fly often s
 and walked straight for 10+ s), and eating progress must not reset when the MN9 rate dips
 for a tick. Dead ahead (|bearing| < 0.15 rad) excites neither eye because the two eye
 pathways are not mirror images (trap 2).
+
+## Playtest fixes (20 Sep 2026, after Kim watched world mode)
+- **Left-right flicker.** With drops on both sides both DNa02 neurons fire and the steering
+  difference flips sign ~6 times a second (measured: 96 flips in 15 s in a two-drop scene);
+  the strong left pathway makes the left eye look like it is blinking. The brain has no
+  winner-take-all, so that indecision is real. Fixes: graded eye input in `senses.py` (rate
+  grows with bearing, 25% at the edge of the dead zone, full at 0.8 rad) cut eye on/off
+  toggles 97 -> 30; turning inertia in `body.py` (`TURN_TAU` 0.4 s) cut heading reversals
+  74 -> ~16 per 15 s with no change in time-to-drop (7.0 s for 300 px). The right steering
+  channel is scaled x2.2 (`RIGHT_TURN_GAIN`, trap 2) so both eyes pull equally.
+- **Panic with the spider "far away".** 220 px looks small on the beamer, and "closing" was
+  computed from the distance, so walking toward a resting spider also loomed. Now the spider
+  looms only while it is moving toward the fly, and its threat radius is drawn permanently
+  (fills red when it charges). Eye input alone never drives DNp01 (0 Hz under both eyes 150 Hz,
+  or eyes + sugar), so every jump has a looming spider behind it.
+- **Death.** A catch now freezes the fly on its back for 1.5 s, then respawns it away from the
+  spider, which rests 4.5 s.
+- 120 s re-run: connected 5 drops / 2 catches / 35 jumps, blind 0 / 3 / 0.

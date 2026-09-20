@@ -10,6 +10,8 @@ N_DROPS = 5
 SPIDER_SPEED = 32.0    # px/s: slower than a walking fly (40 px/s), so only a feeding fly gets caught
 CATCH_R = 30.0
 SPIDER_REST_S = 3.0    # after a catch the spider sits still (fair restart)
+FLY_DEAD_S = 1.5       # the fly lies still after a catch, then respawns
+LOOM_RANGE = 220.0     # px: the spider's threat radius (senses.py uses the same number)
 
 
 @dataclass
@@ -17,8 +19,9 @@ class World:
     rng: random.Random = field(default_factory=lambda: random.Random(0))
     drops: list = field(default_factory=list)
     spider: list = field(default_factory=lambda: [W * 0.85, H * 0.85])
-    spider_prev_d: float = 1e9
+    spider_closing: bool = False
     spider_rest: float = 0.0
+    fly_dead: float = 0.0
     eating: float = 0.0
     score: int = 0
     caught: int = 0
@@ -38,12 +41,17 @@ class World:
         return None
 
     def hazards(self, fly):
-        d = math.hypot(self.spider[0] - fly.x, self.spider[1] - fly.y)
-        closing = d < self.spider_prev_d - 0.5
-        return [(self.spider[0], self.spider[1], closing)]
+        return [(self.spider[0], self.spider[1], self.spider_closing)]
 
     def update(self, fly, dt, t):
-        """Call after fly.update(). Applies walls, eating, the spider."""
+        """Call after fly.update(). Applies walls, eating, the spider, death and respawn."""
+        if self.fly_dead > 0:
+            self.fly_dead -= dt
+            if self.fly_dead <= 0:                       # respawn away from the spider
+                fly.x, fly.y = W - self.spider[0], H - self.spider[1]
+                fly.x = min(max(fly.x, 100), W - 100); fly.y = min(max(fly.y, 100), H - 100)
+                fly.heading = self.rng.uniform(-math.pi, math.pi); fly.turn_rate = 0.0; fly.cooldown = 0.0
+            return
         # walls: bounce (arena rule)
         if fly.x < 0 or fly.x > W:
             fly.heading = math.pi - fly.heading; fly.x = min(max(fly.x, 0), W)
@@ -58,16 +66,17 @@ class World:
             if self.eating >= EAT_S:
                 self.drops.remove(d); self.drops.append(self.spawn_drop())
                 self.score += 1; self.eating = 0.0; self.events.append((t, "EAT"))
-        # spider: chases the fly
+        # spider: chases the fly; it looms only while it is moving toward the fly
         sx, sy = self.spider
         dist = math.hypot(fly.x - sx, fly.y - sy)
-        self.spider_prev_d = dist
+        self.spider_closing = False
         if self.spider_rest > 0:
             self.spider_rest -= dt
         elif dist > 1e-6:
             step = min(SPIDER_SPEED * dt, dist)
             self.spider[0] += (fly.x - sx) / dist * step; self.spider[1] += (fly.y - sy) / dist * step
+            self.spider_closing = True
             if dist < CATCH_R:
                 self.caught += 1; self.events.append((t, "CAUGHT"))
-                self.spider = [W - fly.x, H - fly.y]      # respawn far away
-                self.spider_rest = SPIDER_REST_S; self.spider_prev_d = 1e9
+                self.fly_dead = FLY_DEAD_S; self.eating = 0.0
+                self.spider_rest = SPIDER_REST_S + FLY_DEAD_S; self.spider_closing = False

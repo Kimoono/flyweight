@@ -22,7 +22,7 @@ def run(label, connected):
             br.set_input(rates); out, active = br.step(TICK_MS)
             if active > 3000:
                 br.reset(); fainted_until = t + 2.0; faints += 1; world.events.append((t, "FAINT"))
-            else:
+            elif world.fly_dead <= 0:
                 fly.update(out, TICK_MS / 1000)
         world.update(fly, TICK_MS / 1000, t)
         jumps += fly.jumped; feeding_ticks += fly.feeding

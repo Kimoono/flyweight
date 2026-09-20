@@ -4,16 +4,20 @@ motor side, this is hand-written; everything between the two is connectome.
 
 Rules (deliberately simple, tunable):
 - eye_target: an object (sugar drop) in front of the fly within SEE_RANGE excites the eye on
-  the side it is on. Dead ahead (within DEADBAND) excites neither: the two eye pathways are
-  not mirror images (findings, trap 2), so equal input would not mean "go straight".
-- shadow: a hazard (the spider) within LOOM_RANGE and getting closer looms on its side.
+  the side it is on, graded by how far off-centre it is (an object nearly straight ahead
+  drives the eye softly, one at 45 degrees or more at full rate). Dead ahead (within DEADBAND)
+  excites neither. The graded drive is what stops the fly overshooting and flickering left-right.
+- shadow: a hazard (the spider) within LOOM_RANGE that is itself moving toward the fly looms
+  on its side. A fly walking toward a resting spider is not looming.
 - sugar: the fly is standing on a drop. Capped at SUGAR_HZ (findings: sustained input).
 """
 import math
 
 SEE_RANGE = 700.0      # px: how far the eyes notice an object
 FOV = math.radians(150)  # half-angle: only what is right behind the fly is unseen
-DEADBAND = 0.15        # rad: object straight ahead excites neither eye
+DEADBAND = 0.08        # rad: object straight ahead excites neither eye
+EYE_FULL = 0.8         # rad: bearing at which the eye is driven at full rate
+EYE_MIN = 0.25         # fraction of EYE_HZ at the edge of the dead zone
 EYE_HZ = 150.0
 LOOM_RANGE = 220.0     # px: a hazard closer than this, and approaching, is a looming shadow
 SHADOW_HZ = 150.0
@@ -40,8 +44,10 @@ def encode(fly, drops, hazards, on_drop, on_bitter=False):
         if abs(b) > FOV or abs(b) < DEADBAND:
             continue
         side = "left" if b > 0 else "right"
-        rates.setdefault("eye_target", {})[side] = EYE_HZ
-        seen.append(f"drop {side}")
+        hz = EYE_HZ * min(1.0, EYE_MIN + (1 - EYE_MIN) * (abs(b) - DEADBAND) / (EYE_FULL - DEADBAND))
+        rates.setdefault("eye_target", {})[side] = max(rates.get("eye_target", {}).get(side, 0), hz)
+        if f"drop {side}" not in seen:
+            seen.append(f"drop {side}")
     for x, y, closing in hazards:
         d = math.hypot(x - fly.x, y - fly.y)
         if d < LOOM_RANGE and closing:
