@@ -31,6 +31,11 @@
   #held { position: absolute; left: 18px; top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
   .chip { padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; color: #000; opacity: .25; }
   .chip.on { opacity: 1; }
+  #score { position: absolute; left: 18px; bottom: 14px; font-size: 22px; font-weight: 800; letter-spacing: 1px; color: #e8ecf1; }
+  #score span { color: #9aa3ad; font-weight: 500; font-size: 15px; margin-left: 10px; }
+  #flash { position: absolute; left: 0; right: 0; top: 40%; text-align: center; font-size: 64px; font-weight: 900; letter-spacing: 3px;
+    pointer-events: none; opacity: 0; transition: opacity .3s; text-shadow: 0 0 30px #000; }
+  #flash.show { opacity: 1; transition: none; }
   #jenga { position: absolute; right: 18px; top: 12px; width: 340px; background: rgba(21,26,35,.92); border-radius: 14px;
     padding: 12px 16px; display: none; font-size: 15px; }
   #jenga.show { display: block; }
@@ -66,6 +71,8 @@
       <div id="held"></div>
       <div id="faint">THE FLY FAINTED<small>too much at once — back in a moment</small></div>
       <div id="jenga"><h2>NEURON JENGA</h2><div class="dead"></div><ul></ul><div class="board"></div></div>
+      <div id="score"></div>
+      <div id="flash"></div>
     </div>
     <div id="brain-wrap" class="panel">
       <canvas id="brain"></canvas>
@@ -103,7 +110,7 @@ for (const b of Object.keys(COLOURS)) {
   c.style.background = COLOURS[b]; $("held").appendChild(c);
 }
 
-let state = null, trail = [], faintTimer = null;
+let state = null, trail = [], faintTimer = null, lastEvent = { name: "", tick: -100 };
 
 function setLabel(id, hz, full) {
   const el = $("l-" + id), v = Math.min(1, hz / full);
@@ -293,9 +300,34 @@ function drawArena() {
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
   }
-  const f = state.fly, held = new Set(state.held);
+  const f = state.fly, held = new Set(state.held), w = state.world, senses = state.senses || [];
+  // sugar drops
+  for (const [dx, dy] of w.drops) {
+    ctx.fillStyle = "rgba(138,201,38,.25)"; ctx.beginPath(); ctx.arc(dx, dy, 28, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = COLOURS.sugar; ctx.beginPath(); ctx.arc(dx, dy, 12, 0, Math.PI * 2); ctx.fill();
+  }
+  // what the eyes see: a line from the fly to each drop in view, in that eye's colour
+  if (senses.some((x) => x.startsWith("drop"))) {
+    for (const [dx, dy] of w.drops) {
+      const d = Math.hypot(dx - f.x, dy - f.y); if (d > 700) continue;
+      let b = Math.atan2(dy - f.y, dx - f.x) - f.heading; b = Math.atan2(Math.sin(b), Math.cos(b));
+      if (Math.abs(b) < 0.15 || Math.abs(b) > 2.6) continue;
+      ctx.strokeStyle = b > 0 ? "rgba(255,77,109,.35)" : "rgba(255,159,28,.35)"; ctx.lineWidth = 2; ctx.setLineDash([8, 10]);
+      ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(dx, dy); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  // the spider
+  const [sx, sy] = w.spider, looming = senses.some((x) => x.startsWith("shadow"));
+  ctx.save(); ctx.translate(sx, sy);
+  if (looming) { ctx.fillStyle = "rgba(76,201,240,.15)"; ctx.beginPath(); ctx.arc(0, 0, 90, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = w.spider_rest ? "#4b5563" : "#7f1d1d"; ctx.lineWidth = 4; ctx.lineCap = "round";
+  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + 0.2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(38 * Math.cos(a), 38 * Math.sin(a)); ctx.stroke(); }
+  ctx.fillStyle = w.spider_rest ? "#374151" : "#991b1b"; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fecaca"; ctx.beginPath(); ctx.arc(-7, 6, 4, 0, Math.PI * 2); ctx.arc(7, 6, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
   ctx.translate(f.x, f.y); ctx.rotate(f.heading);
-  for (const [btn, side] of [["left_shadow", 1], ["right_shadow", -1]]) if (held.has(btn)) {
+  if (w.eating > 0) { ctx.strokeStyle = COLOURS.sugar; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(0, 0, 48, -Math.PI / 2, -Math.PI / 2 + w.eating * Math.PI * 2); ctx.stroke(); }
+  for (const [btn, side] of [["left_shadow", 1], ["right_shadow", -1]]) if (held.has(btn) || senses.includes(btn.replace("_", " ").replace("left shadow", "shadow left").replace("right shadow", "shadow right"))) {
     ctx.fillStyle = "rgba(76,201,240,.18)"; ctx.beginPath(); ctx.ellipse(-10, side * 70, 60, 40, 0, 0, Math.PI * 2); ctx.fill();
   }
   const glow = state.fainted ? "#6b7280" : "#e8ecf1";
@@ -304,8 +336,9 @@ function drawArena() {
   ctx.beginPath(); ctx.ellipse(-30, -24, 30, 10, -0.25, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = glow; ctx.beginPath(); ctx.ellipse(6, 0, 18, 13, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#b8bec8"; ctx.beginPath(); ctx.arc(28, 0, 12, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = held.has("left_eye") ? COLOURS.left_eye : "#7a2035"; ctx.beginPath(); ctx.arc(32, 8, 6, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = held.has("right_eye") ? COLOURS.right_eye : "#7a4a15"; ctx.beginPath(); ctx.arc(32, -8, 6, 0, Math.PI * 2); ctx.fill();
+  const seeL = held.has("left_eye") || senses.includes("drop left"), seeR = held.has("right_eye") || senses.includes("drop right");
+  ctx.fillStyle = seeL ? COLOURS.left_eye : "#7a2035"; ctx.beginPath(); ctx.arc(32, 8, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = seeR ? COLOURS.right_eye : "#7a4a15"; ctx.beginPath(); ctx.arc(32, -8, 6, 0, Math.PI * 2); ctx.fill();
   if (f.feeding) { ctx.strokeStyle = COLOURS.sugar; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(38, 0); ctx.lineTo(62, 0); ctx.stroke(); }
   if (f.jumped) { ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 70, 0, Math.PI * 2); ctx.stroke(); }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -364,7 +397,7 @@ function renderJenga(j) {
 
 // ------------------------------------------------------------------ socket
 const sock = connect({
-  onOpen() { $("conn").textContent = "connected"; },
+  onOpen() { $("conn").textContent = "connected"; sock.send({ type: "subscribe", spikes: true }); },
   onClose() { $("conn").textContent = "reconnecting…"; },
   onMessage(m) {
     if (m.type === "fainted") {
@@ -378,8 +411,16 @@ const sock = connect({
     const f = ticks.find((x) => x.tick === m.tick); if (f) { f.held = m.held; f.outputs = m.outputs; }
     trail.push({ x: m.fly.x, y: m.fly.y }); if (trail.length > 120) trail.shift();
     if (!replay) setLabels(m.outputs);
-    const held = new Set(m.held);
-    for (const b of Object.keys(COLOURS)) $("chip-" + b).classList.toggle("on", held.has(b));
+    const held = new Set(m.held), sensed = new Set(m.senses || []);
+    const lit = { left_eye: sensed.has("drop left"), right_eye: sensed.has("drop right"), left_shadow: sensed.has("shadow left"),
+                  right_shadow: sensed.has("shadow right"), sugar: sensed.has("sugar"), bitter: sensed.has("bitter") };
+    for (const b of Object.keys(COLOURS)) $("chip-" + b).classList.toggle("on", held.has(b) || lit[b]);
+    $("score").innerHTML = `${m.world.score} EATEN <span>${m.world.caught} caught by the spider</span>`;
+    for (const e of m.world.events) if (e !== lastEvent.name || m.tick - lastEvent.tick > 20) {
+      lastEvent = { name: e, tick: m.tick };
+      const fl = $("flash"); fl.textContent = e === "EAT" ? "NOM!" : e === "CAUGHT" ? "GOT YOU!" : e; fl.style.color = e === "EAT" ? "#8ac926" : "#ef4444";
+      fl.classList.add("show"); setTimeout(() => fl.classList.remove("show"), 700);
+    }
     $("conn").textContent = `${m.players.length} phone${m.players.length === 1 ? "" : "s"} · ${m.active} neurons active · sim ${m.perf.brain_ms} ms/tick`;
   },
   onBinary: onSpikes,

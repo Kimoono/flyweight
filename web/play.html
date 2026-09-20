@@ -18,6 +18,9 @@
   .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
   .role { border: 0; border-radius: 18px; font-size: 22px; font-weight: 800; color: #000; }
   .role.wide { grid-column: 1 / -1; }
+  #mini { width: 100%; aspect-ratio: 16 / 9; background: #11161f; border-radius: 14px; touch-action: none; display: block; }
+  .cool { height: 8px; border-radius: 4px; background: #1f2937; margin: 12px 0; overflow: hidden; } .cool div { height: 100%; background: #8ac926; width: 100%; }
+  .big-hint { font-size: 20px; font-weight: 800; text-align: center; margin: 14px 0 6px; }
   .top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
   .top .who { font-size: 18px; font-weight: 800; }
   .top .conn { margin-left: auto; font-size: 13px; color: #9aa3ad; }
@@ -47,8 +50,9 @@
 <script type="module">
 import { connect } from "/static/ws.js";
 
-const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9f0", right_shadow: "#c77dff", sugar: "#8ac926", bitter: "#ffd166", tongue: "#8ac926" };
+const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9f0", right_shadow: "#c77dff", sugar: "#8ac926", bitter: "#ffd166", tongue: "#8ac926", world: "#e8ecf1" };
 const ROLES = [
+  { id: "world", label: "Drop sugar", wide: true, world: true, buttons: [] },
   { id: "left_eye", label: "Left eye", buttons: [["left_eye", "LEFT EYE", "I see something on the left"]] },
   { id: "right_eye", label: "Right eye", buttons: [["right_eye", "RIGHT EYE", "I see something on the right"]] },
   { id: "left_shadow", label: "Left shadow", buttons: [["left_shadow", "LEFT SHADOW", "something is coming from the left!"]] },
@@ -57,7 +61,22 @@ const ROLES = [
 ];
 
 const $ = (id) => document.getElementById(id);
-let role = null, sock = null, held = new Set(), heartbeat = null;
+let role = null, sock = null, held = new Set(), heartbeat = null, state = null, coolUntil = 0;
+
+function drawMini() {
+  requestAnimationFrame(drawMini);
+  const mini = document.getElementById("mini"); if (!mini || !state) return;
+  const r = mini.getBoundingClientRect(); if (mini.width !== Math.round(r.width * devicePixelRatio)) { mini.width = Math.round(r.width * devicePixelRatio); mini.height = Math.round(r.height * devicePixelRatio); }
+  const ctx = mini.getContext("2d"), s = mini.width / state.arena.w;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#11161f"; ctx.fillRect(0, 0, mini.width, mini.height);
+  ctx.setTransform(s, 0, 0, -s, 0, mini.height);
+  for (const [x, y] of state.world.drops) { ctx.fillStyle = COLOURS.sugar; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill(); }
+  const [sx, sy] = state.world.spider; ctx.fillStyle = "#991b1b"; ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2); ctx.fill();
+  const f = state.fly; ctx.translate(f.x, f.y); ctx.rotate(f.heading);
+  ctx.fillStyle = "#e8ecf1"; ctx.beginPath(); ctx.moveTo(40, 0); ctx.lineTo(-30, 26); ctx.lineTo(-30, -26); ctx.closePath(); ctx.fill();
+  const bar = document.getElementById("coolbar"); if (bar) bar.style.width = Math.min(100, 100 - (coolUntil - Date.now()) / 20) + "%";
+}
+requestAnimationFrame(drawMini);
 
 // ---- role picker
 for (const r of ROLES) {
@@ -74,6 +93,18 @@ function chooseRole(r) {
   role = r; try { localStorage.setItem("role", r.id); } catch {}
   $("who").textContent = r.label.toUpperCase(); $("who").style.color = COLOURS[r.id];
   const box = $("buttons"); box.innerHTML = "";
+  if (r.world) {
+    box.innerHTML = `<div class="big-hint">TAP THE ARENA TO DROP SUGAR</div><p class="hint" style="text-align:center">The fly decides whether it wants it. One drop every 2 s.</p>
+      <canvas id="mini"></canvas><div class="cool"><div id="coolbar"></div></div>`;
+    const mini = $("mini");
+    mini.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); if (!state || Date.now() < coolUntil) return;
+      const r2 = mini.getBoundingClientRect();
+      const x = (e.clientX - r2.left) / r2.width * state.arena.w, y = (1 - (e.clientY - r2.top) / r2.height) * state.arena.h;
+      sock.send({ type: "drop", x, y }); buzz(40); coolUntil = Date.now() + 2000;
+    });
+    sock.send({ type: "join", role: null }); show("game"); wakeLock(); return;
+  }
   for (const [btn, text, hint] of r.buttons) {
     const el = document.createElement("div");
     el.className = "fire"; el.style.background = COLOURS[btn]; el.style.color = COLOURS[btn];
@@ -123,6 +154,7 @@ sock = connect({
   onOpen() { $("conn").textContent = "connected"; if (role) { sock.send({ type: "join", role: role.id }); for (const b of held) sock.send({ type: "press", button: b }); } },
   onClose() { $("conn").textContent = "reconnecting…"; },
   onMessage(m) {
+    if (m.type === "state") state = m;
     if (m.type === "fainted") { $("faint").classList.add("show"); setTimeout(() => $("faint").classList.remove("show"), m.seconds * 1000); }
   },
 });

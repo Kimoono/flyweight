@@ -31,12 +31,16 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "sim"))
 from brain import Brain  # noqa: E402  (sim/ is a plain directory, not a package)
 from body import Fly     # noqa: E402
+from senses import encode  # noqa: E402
+from world import World, W as WORLD_W, H as WORLD_H  # noqa: E402
 
 # ----------------------------------------------------------------------------- config
 PORT = 8000
 TICK_MS = 50                  # simulated ms per tick -> 20 ticks/s
 DT_MS = 0.5                   # brain integration step
-ARENA_W, ARENA_H = 1600.0, 900.0   # world units (px on the beamer before scaling)
+ARENA_W, ARENA_H = WORLD_W, WORLD_H   # world units (px on the beamer before scaling), from sim/world.py
+DROP_COOLDOWN_S = 2.0         # a phone may place one sugar drop this often
+MAX_DROPS = 8
 HOLD_TIMEOUT_S = 1.5          # a pressed button expires unless the phone re-sends "press"
 FAINT_S = 2.0                 # how long the fly is out after the watchdog fires
 WATCHDOG_ACTIVE = 3000        # active neurons in one tick above this = olfactory runaway
@@ -115,12 +119,15 @@ class Hub:
 
     def __init__(self):
         self.clients: dict[int, WebSocket] = {}
+        self.spikes: set[int] = set()        # clients that want the binary brain-view frames (the beamer)
         self.loop: asyncio.AbstractEventLoop | None = None
 
     async def broadcast(self, msg):
         data = msg if isinstance(msg, bytes) else json.dumps(msg, separators=(",", ":"))
         dead = []
         for cid, ws in list(self.clients.items()):
+            if isinstance(data, bytes) and cid not in self.spikes:
+                continue
             try:
                 await (ws.send_bytes(data) if isinstance(data, bytes) else ws.send_text(data))
             except Exception:
@@ -144,6 +151,8 @@ class Game:
         self.brain = Brain(dt=DT_MS)
         print(f"brain loaded: {self.brain.n} neurons in {time.time() - t0:.1f}s, dt={DT_MS} ms")
         self.fly = Fly(x=ARENA_W / 2, y=ARENA_H / 2, heading=0.0)
+        self.world = World()
+        self.senses: list[str] = []
         self.sample_rng = np.random.default_rng(0)
         self.groups_json = json.dumps({kind: {name: {side: self.brain.groups[(name, side)].tolist() for side in ("left", "right")}
                                               for name in names}
@@ -194,6 +203,13 @@ class Game:
                 action, block_id = self.cmds.get_nowait()
             except queue.Empty:
                 break
+            if action == "drop":
+                x, y = block_id
+                if 0 <= x <= ARENA_W and 0 <= y <= ARENA_H:
+                    if len(self.world.drops) >= MAX_DROPS:
+                        self.world.drops.pop(0)
+                    self.world.drops.append([x, y])
+                continue
             if action == "pull" and block_id in self.blocks:
                 b = self.blocks[block_id]
                 if "random" in b:
@@ -263,7 +279,12 @@ class Game:
                 brain_ms = 0.0
                 ev = np.empty(0, np.uint32)
             else:
-                self.brain.set_input(inputs.rates(held))
+                # what the world does to the senses (sim/senses.py) + what the phones add (direct lines)
+                rates, self.senses = encode(self.fly, self.world.drops, self.world.hazards(self.fly), self.world.on_drop(self.fly))
+                for group, sides in inputs.rates(held).items():
+                    for side, hz in sides.items():
+                        rates.setdefault(group, {})[side] = max(rates.get(group, {}).get(side, 0), hz)
+                self.brain.set_input(rates)
                 tb = time.perf_counter()
                 out, active, ev = self.step_tick()
                 brain_ms = (time.perf_counter() - tb) * 1000
@@ -277,9 +298,7 @@ class Game:
                     hub.send_from_thread({"type": "fainted", "active": active, "seconds": FAINT_S})
                 else:
                     self.fly.update(out, TICK_MS / 1000.0)
-                    # Arena rule (not behaviour): the arena wraps around like Pac-Man.
-                    self.fly.x %= ARENA_W
-                    self.fly.y %= ARENA_H
+                    self.world.update(self.fly, TICK_MS / 1000.0, self.tick * TICK_MS / 1000.0)   # walls, eating, spider
             self.tick += 1
             tick_ms = (time.perf_counter() - t_start) * 1000
             # binary frame for the brain view: uint32 tick, then uint32 events (chunk << 18 | neuron index)
@@ -293,6 +312,13 @@ class Game:
                 "outputs": {k: {"left": round(v["left"]), "right": round(v["right"])} for k, v in out.items()},
                 "active": active,
                 "held": sorted(held),
+                "senses": self.senses if not fainted else [],
+                "world": {"drops": [[round(x), round(y)] for x, y in self.world.drops],
+                          "spider": [round(self.world.spider[0]), round(self.world.spider[1])],
+                          "spider_rest": self.world.spider_rest > 0,
+                          "eating": round(self.world.eating / 1.5, 2),
+                          "score": self.world.score, "caught": self.world.caught,
+                          "events": [e for t_ev, e in self.world.events if t_ev > (self.tick - 20) * TICK_MS / 1000.0]},
                 "fainted": fainted,
                 "players": [p for p in inputs.players.values()],
                 "perf": {"brain_ms": round(brain_ms), "tick_ms": round(tick_ms)},
@@ -373,9 +399,9 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     cid = id(ws)
     hub.clients[cid] = ws
+    last_drop = -1e9
     try:
         await ws.send_text(json.dumps(game.jenga_state()))
-        await ws.send_bytes(game.dead_frame())
         while True:
             msg = json.loads(await ws.receive_text())
             t = msg.get("type")
@@ -395,12 +421,22 @@ async def ws_endpoint(ws: WebSocket):
                 inputs.release(cid)
             elif t == "jenga":
                 game.cmds.put((msg.get("action"), msg.get("block")))
+            elif t == "subscribe":
+                (hub.spikes.add if msg.get("spikes") else hub.spikes.discard)(cid)
+                if msg.get("spikes"):
+                    await ws.send_bytes(game.dead_frame())
+            elif t == "drop":
+                now = time.monotonic()
+                if now - last_drop >= DROP_COOLDOWN_S:
+                    last_drop = now
+                    game.cmds.put(("drop", (float(msg.get("x", 0)), float(msg.get("y", 0)))))
             elif t == "ping":
                 await ws.send_text('{"type":"pong"}')
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         hub.clients.pop(cid, None)
+        hub.spikes.discard(cid)
         inputs.players.pop(cid, None)
         inputs.release(cid)
 
