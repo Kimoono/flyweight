@@ -97,7 +97,7 @@ function joinDuel(s) {
   $("buttons").innerHTML = `<canvas id="mini"></canvas>
     <div class="bar"><span>YOU <b id="my-score">0</b></span><span id="clock">waiting for the host</span><span>THEM <b id="their-score">0</b></span></div>
     <div class="cool"><div><span id="cool-sugar" style="background:${COLOURS.sugar}"></span></div><div><span id="cool-bitter" style="background:${COLOURS.bitter}"></span></div></div>
-    <div class="legend"><span><i style="background:${COLOURS.sugar}"></i>tap YOUR half: sugar</span><span><i style="background:${COLOURS.bitter}"></i>tap THEIR half: bitter (spoils a drop)</span></div>`;
+    <div class="legend"><span><i style="background:${COLOURS.sugar}"></i>tap YOUR half: sugar</span><span><i style="background:${COLOURS.bitter}"></i>tap THEIR half: bitter (spoils a drop)</span><span><i style="background:#dc2626"></i>spider catch on your half: their point</span></div>`;
   const mini = $("mini");
   mini.addEventListener("pointerdown", (e) => {
     e.preventDefault(); if (!state) return;

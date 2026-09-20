@@ -18,6 +18,8 @@ BITTER_R = 70.0        # px: a bitter tap this close to a sugar drop spoils it, 
 # inside its sight, gives up when the fly gets away, and walks back home.
 SIGHT_R = 260.0        # px: the fly inside this = the spider charges
 CHARGE_SPEED = 70.0    # px/s: faster than a walking fly (40 px/s); only a jump gets away
+POUNCE_R = 130.0       # px: inside this the spider lunges
+POUNCE_SPEED = 250.0   # px/s during the lunge: a race against the fly's escape reflex
 RETURN_SPEED = 45.0    # px/s walking home
 GIVE_UP_R = 420.0      # px: fly this far away while hunting = the spider gives up
 HUNT_MAX_S = 6.0       # s: a charge never lasts longer than this
@@ -132,9 +134,10 @@ class World:
             if dist < SIGHT_R:
                 self.spider_state, self.spider_timer = "hunt", 0.0; self.events.append((t, "SPIDER!"))
         elif self.spider_state == "hunt":
-            dist = self._move_spider_toward(fly.x, fly.y, CHARGE_SPEED, dt)
+            dist = self._move_spider_toward(fly.x, fly.y, POUNCE_SPEED if dist < POUNCE_R else CHARGE_SPEED, dt)
             if dist < CATCH_R:
                 self.caught += 1; self.events.append((t, "CAUGHT"))
+                self.score["right" if self.half(fly.x) == "left" else "left"] += 1   # caught on your half = their point
                 self.fly_dead = FLY_DEAD_S; self.eating = 0.0
                 self.spider_state, self.spider_timer = "return", 0.0
             elif dist > GIVE_UP_R or self.spider_timer > HUNT_MAX_S:

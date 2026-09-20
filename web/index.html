@@ -443,7 +443,7 @@ const sock = connect({
     const h = m.heat, pl = h.players, sc = m.world.score;
     const clock = h.phase === "playing" ? Math.ceil(h.time_left) + " s" : h.phase === "countdown" ? Math.ceil(h.time_left) : h.phase === "over" ? "TIME" : "";
     $("score").innerHTML = `<span class="l">${pl.left || "LEFT"} ${sc.left}</span><span class="clock ${h.phase === "playing" && h.time_left < 10 ? "low" : ""}">${clock}</span>` +
-      `<small>${h.phase === "lobby" ? "waiting for the host · " : ""}${m.world.caught} caught by the spider</small><span class="r">${sc.right} ${pl.right || "RIGHT"}</span>`;
+      `<small>${h.phase === "lobby" ? "waiting for the host · " : ""}${m.world.caught} caught by the spider · a catch on your half is their point</small><span class="r">${sc.right} ${pl.right || "RIGHT"}</span>`;
     const hb = $("heat-banner");
     if (h.phase === "countdown") { hb.innerHTML = `${Math.ceil(h.time_left)}<small>${pl.left || "LEFT"} vs ${pl.right || "RIGHT"}</small>`; hb.classList.add("show"); }
     else if (h.phase === "over") { const wn = h.winner === "draw" ? "DRAW" : (pl[h.winner] || h.winner.toUpperCase()) + " WINS"; hb.innerHTML = `${wn}<small>${sc.left} – ${sc.right}</small>`; hb.style.color = h.winner === "left" ? "#3b82f6" : h.winner === "right" ? "#f59e0b" : "#e8ecf1"; hb.classList.add("show"); }

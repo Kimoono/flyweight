@@ -206,3 +206,17 @@ the jump muscle. What it does NOT give us:
   have to be re-measured (pharyngeal taste showed a burst at 5 s).
 Verdict: keep FlyWire for the workshop. MaleCNS is a documented, licence-friendly upgrade
 path and a good debrief line ("the legs are in this one, and it still needs a body").
+- **The spider could never catch a fly in the open** (Kim: only at the walls). Two changes:
+  looming now grows with proximity in `senses.py` (0 at 240 px, full at 70 px), which is how a
+  looming object drives a real eye and makes the escape a race instead of a fixed early
+  trigger; and the spider lunges inside 130 px. Open-field ambush, 12 seeds each:
+
+  | Lunge speed | Fly walking past | Fly feeding in the ring |
+  |---|---|---|
+  | none (70 px/s charge) | 0/12 caught | 0/12 |
+  | 250 px/s (chosen) | 4/12 | 4/12 |
+  | 350 px/s | 6/12 | 4/12 |
+
+  Feeding does not change the odds: the brain's escape response to a shadow is identical on
+  sugar (DNp01 135 vs 133 Hz, same 50 ms latency), so a feeding fly jumps just as well; a
+  charge only interrupts the meal. Rule added: a catch on your half is the opponent's point.
