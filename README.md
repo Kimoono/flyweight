@@ -11,6 +11,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ./fetch_data.sh                 # connectome + annotations, ~225 MB
 python sim/build_neurons.py     # regenerates data/neurons.json (already included)
+python sim/build_positions.py   # regenerates data/positions.bin for the brain view (already included)
 python sim/brain.py 0.5         # smoke test + speed benchmark
 python sim/demo_autopilot.py    # brain steers a fly to a target, headless
 python server.py                # the game: beamer page on /, phones on /play (QR in terminal)
