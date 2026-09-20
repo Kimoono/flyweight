@@ -123,3 +123,23 @@ the right place break a whole reflex; the memory, smell, dopamine and navigation
 nothing for reflexes; feeding needs both halves (the tongue's motor neuron is wired from both
 sides); random damage is tolerated up to ~15% and collapses around 20%, so a Jenga round of
 "random 5%" pulls lasts 3-4 turns. A check takes ~1.6 s of wall time and pauses the game.
+
+## The world drives the senses (20 Sep 2026): the fly behaves on its own
+`sim/senses.py` turns the arena into input rates (a drop in view excites the eye on its side,
+an approaching spider within 220 px looms on its side, standing on a drop = sugar 40 Hz);
+`sim/world.py` has 5 sugar drops, a spider chasing at 32 px/s, walls, eating (1.5 s of
+proboscis on a drop). `python sim/demo_world.py 120` runs the same world with the senses
+connected and blind:
+
+| 120 s in the arena | Drops eaten | Caught by spider | Escape jumps | Time feeding |
+|---|---|---|---|---|
+| senses connected | 9 | 2 | 20 | 15 s |
+| blind (no input) | 0 | 5 | 0 | 0 s |
+
+No faints, 0.8 s wall per simulated second including the world. The fly turns toward drops
+within ~2 s of seeing them, stops to eat, and jumps away when the spider looms; it gets caught
+mostly while feeding (the spider is slower than a walking fly on purpose). Tuning that
+mattered: vision range 700 px and 5 drops (with 450 px / 3 drops the fly often saw nothing
+and walked straight for 10+ s), and eating progress must not reset when the MN9 rate dips
+for a tick. Dead ahead (|bearing| < 0.15 rad) excites neither eye because the two eye
+pathways are not mirror images (trap 2).
