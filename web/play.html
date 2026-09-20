@@ -15,15 +15,16 @@
   .screen.show { display: flex; }
   h1 { font-size: 22px; margin: 4px 0 14px; letter-spacing: 1px; }
   p.hint { color: #9aa3ad; margin: 0 0 16px; font-size: 15px; }
+  input { width: 100%; font-size: 22px; padding: 14px; border-radius: 14px; border: 1px solid #374151; background: #151a23; color: #e8ecf1; -webkit-user-select: text; user-select: text; }
+  .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .side { border: 0; border-radius: 18px; font-size: 24px; font-weight: 800; color: #000; padding: 34px 0; }
+  .side.left { background: #3b82f6; } .side.right { background: #f59e0b; }
+  .more { margin-top: auto; text-align: center; color: #6b7280; font-size: 14px; text-decoration: underline; }
   .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
   .role { border: 0; border-radius: 18px; font-size: 22px; font-weight: 800; color: #000; }
   .role.wide { grid-column: 1 / -1; }
-  #mini { width: 100%; aspect-ratio: 16 / 9; background: #11161f; border-radius: 14px; touch-action: none; display: block; }
-  .cool { height: 8px; border-radius: 4px; background: #1f2937; margin: 12px 0; overflow: hidden; } .cool div { height: 100%; background: #8ac926; width: 100%; }
-  .big-hint { font-size: 20px; font-weight: 800; text-align: center; margin: 14px 0 6px; }
   .top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-  .top .who { font-size: 18px; font-weight: 800; }
-  .top .conn { margin-left: auto; font-size: 13px; color: #9aa3ad; }
+  .top .who { font-size: 18px; font-weight: 800; } .top .conn { margin-left: auto; font-size: 13px; color: #9aa3ad; }
   .top .change { background: none; border: 1px solid #374151; color: #9aa3ad; border-radius: 999px; padding: 6px 12px; font-size: 13px; }
   .buttons { flex: 1; display: flex; flex-direction: column; gap: 14px; }
   .fire { flex: 1; border: 0; border-radius: 28px; font-size: 40px; font-weight: 900; letter-spacing: 2px; color: #000;
@@ -31,81 +32,122 @@
     box-shadow: inset 0 -10px 0 rgba(0,0,0,.25); transition: transform .05s, filter .05s; }
   .fire small { font-size: 16px; font-weight: 600; letter-spacing: 0; opacity: .75; margin-top: 8px; }
   .fire.down { transform: scale(.97); filter: brightness(1.25); box-shadow: inset 0 4px 0 rgba(0,0,0,.25), 0 0 40px currentColor; }
-  #faint { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
+  #mini { width: 100%; aspect-ratio: 16 / 9; background: #11161f; border-radius: 14px; touch-action: none; display: block; }
+  .bar { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; color: #9aa3ad; margin: 12px 0 4px; }
+  .bar b { color: #e8ecf1; font-size: 26px; }
+  .cool { display: flex; gap: 10px; margin-top: 10px; }
+  .cool div { flex: 1; height: 10px; border-radius: 5px; background: #1f2937; overflow: hidden; } .cool span { display: block; height: 100%; }
+  .legend { display: flex; gap: 14px; font-size: 13px; color: #9aa3ad; margin-top: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+  #banner { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
     background: rgba(11,14,20,.85); font-size: 34px; font-weight: 900; padding: 24px; }
-  #faint.show { display: flex; }
+  #banner.show { display: flex; }
 </style>
 </head>
 <body>
 <section id="pick" class="screen show">
+  <h1>LURE THE FLY</h1>
+  <p class="hint">You don't control the fly. You control what it wants. Sugar on your half, bitter on theirs.</p>
+  <input id="name" placeholder="your name" maxlength="16" autocomplete="off">
+  <div class="sides"><button class="side left" id="pick-left">PLAY LEFT</button><button class="side right" id="pick-right">PLAY RIGHT</button></div>
+  <div class="more" id="more">be one sense instead (demo mode)</div>
+</section>
+<section id="roles" class="screen">
   <h1>YOU ARE A SENSE</h1>
-  <p class="hint">Pick what part of the fly you are. Nobody steers — the brain decides.</p>
-  <div class="roles" id="roles"></div>
+  <p class="hint">Hold a button to feed one sense of the fly. The brain decides what to do with it.</p>
+  <div class="roles" id="rolegrid"></div>
+  <div class="more" id="back">back to the duel</div>
 </section>
 <section id="game" class="screen">
   <div class="top"><span class="who" id="who"></span><span class="conn" id="conn">connecting…</span><button class="change" id="change">change</button></div>
   <div class="buttons" id="buttons"></div>
 </section>
-<div id="faint">THE FLY FAINTED<br><small style="font-size:18px;font-weight:400">let go of everything for a moment</small></div>
+<div id="banner"></div>
 <script type="module">
 import { connect } from "/static/ws.js";
 
-const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9f0", right_shadow: "#c77dff", sugar: "#8ac926", bitter: "#ffd166", tongue: "#8ac926", world: "#e8ecf1" };
+const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9f0", right_shadow: "#c77dff", sugar: "#8ac926", bitter: "#ffd166", tongue: "#8ac926" };
+const SIDE_COLOUR = { left: "#3b82f6", right: "#f59e0b" };
 const ROLES = [
-  { id: "world", label: "Drop sugar", wide: true, world: true, buttons: [] },
   { id: "left_eye", label: "Left eye", buttons: [["left_eye", "LEFT EYE", "I see something on the left"]] },
   { id: "right_eye", label: "Right eye", buttons: [["right_eye", "RIGHT EYE", "I see something on the right"]] },
   { id: "left_shadow", label: "Left shadow", buttons: [["left_shadow", "LEFT SHADOW", "something is coming from the left!"]] },
   { id: "right_shadow", label: "Right shadow", buttons: [["right_shadow", "RIGHT SHADOW", "something is coming from the right!"]] },
   { id: "tongue", label: "Tongue", wide: true, buttons: [["sugar", "SUGAR", "mmm, tastes sweet"], ["bitter", "BITTER", "yuck!"]] },
 ];
-
 const $ = (id) => document.getElementById(id);
-let role = null, sock = null, held = new Set(), heartbeat = null, state = null, coolUntil = 0;
+let role = null, side = null, myName = "", sock = null, held = new Set(), heartbeat = null, state = null;
+const cool = { sugar: 0, bitter: 0 };
+let lastPhase = null;
 
+function show(id) { for (const s of document.querySelectorAll(".screen")) s.classList.toggle("show", s.id === id); }
+function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
+
+// ---------------------------------------------------------------- duel
+try { $("name").value = localStorage.getItem("name") || ""; } catch {}
+for (const s of ["left", "right"]) $("pick-" + s).addEventListener("click", () => {
+  myName = $("name").value.trim().slice(0, 16); if (!myName) { $("name").focus(); return; }
+  try { localStorage.setItem("name", myName); localStorage.setItem("side", s); } catch {}
+  buzz(30); joinDuel(s);
+});
+function joinDuel(s) {
+  side = s; role = null;
+  sock.send({ type: "join_duel", name: myName, side: s });
+  $("who").textContent = `${myName} · ${s.toUpperCase()}`; $("who").style.color = SIDE_COLOUR[s];
+  $("buttons").innerHTML = `<canvas id="mini"></canvas>
+    <div class="bar"><span>YOU <b id="my-score">0</b></span><span id="clock">waiting for the host</span><span>THEM <b id="their-score">0</b></span></div>
+    <div class="cool"><div><span id="cool-sugar" style="background:${COLOURS.sugar}"></span></div><div><span id="cool-bitter" style="background:${COLOURS.bitter}"></span></div></div>
+    <div class="legend"><span><i style="background:${COLOURS.sugar}"></i>tap YOUR half: sugar</span><span><i style="background:${COLOURS.bitter}"></i>tap THEIR half: bitter (spoils a drop)</span></div>`;
+  const mini = $("mini");
+  mini.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); if (!state) return;
+    const r = mini.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width * state.arena.w, y = (1 - (e.clientY - r.top) / r.height) * state.arena.h;
+    const half = x < state.arena.w / 2 ? "left" : "right", kind = half === side ? "sugar" : "bitter";
+    if (Date.now() < cool[kind]) { buzz(10); return; }
+    sock.send({ type: "drop", x, y, kind }); buzz(40); cool[kind] = Date.now() + (kind === "sugar" ? 2000 : 4000);
+  });
+  show("game"); wakeLock();
+}
 function drawMini() {
   requestAnimationFrame(drawMini);
-  const mini = document.getElementById("mini"); if (!mini || !state) return;
-  const r = mini.getBoundingClientRect(); if (mini.width !== Math.round(r.width * devicePixelRatio)) { mini.width = Math.round(r.width * devicePixelRatio); mini.height = Math.round(r.height * devicePixelRatio); }
-  const ctx = mini.getContext("2d"), s = mini.width / state.arena.w;
+  const mini = document.getElementById("mini"); if (!mini || !state || !side) return;
+  const r = mini.getBoundingClientRect();
+  if (mini.width !== Math.round(r.width * devicePixelRatio)) { mini.width = Math.round(r.width * devicePixelRatio); mini.height = Math.round(r.height * devicePixelRatio); }
+  const ctx = mini.getContext("2d"), aw = state.arena.w, ah = state.arena.h, s = mini.width / aw, w = state.world;
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#11161f"; ctx.fillRect(0, 0, mini.width, mini.height);
   ctx.setTransform(s, 0, 0, -s, 0, mini.height);
-  for (const [x, y] of state.world.drops) { ctx.fillStyle = COLOURS.sugar; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill(); }
-  const [sx, sy] = state.world.spider; ctx.strokeStyle = "rgba(239,68,68,.3)"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(sx, sy, state.world.sight_r || 260, 0, Math.PI * 2); ctx.stroke();
-  ctx.fillStyle = state.world.spider_state === "hunt" ? "#dc2626" : "#991b1b"; ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = side === "left" ? "rgba(59,130,246,.18)" : "rgba(245,158,11,.18)"; ctx.fillRect(side === "left" ? 0 : aw / 2, 0, aw / 2, ah);
+  ctx.strokeStyle = "#374151"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(aw / 2, 0); ctx.lineTo(aw / 2, ah); ctx.stroke();
+  for (const d of w.drops) { ctx.fillStyle = d.bitter ? COLOURS.bitter : COLOURS.sugar; ctx.beginPath(); ctx.arc(d.x, d.y, 24, 0, Math.PI * 2); ctx.fill(); }
+  const [lx, ly] = w.lair; ctx.strokeStyle = "rgba(239,68,68,.35)"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(lx, ly, w.sight_r || 260, 0, Math.PI * 2); ctx.stroke();
+  const [sx, sy] = w.spider; ctx.fillStyle = w.spider_state === "hunt" ? "#dc2626" : "#991b1b"; ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2); ctx.fill();
   const f = state.fly; ctx.translate(f.x, f.y); ctx.rotate(f.heading);
   ctx.fillStyle = "#e8ecf1"; ctx.beginPath(); ctx.moveTo(40, 0); ctx.lineTo(-30, 26); ctx.lineTo(-30, -26); ctx.closePath(); ctx.fill();
-  const bar = document.getElementById("coolbar"); if (bar) bar.style.width = Math.min(100, 100 - (coolUntil - Date.now()) / 20) + "%";
+  for (const k of ["sugar", "bitter"]) { const el = document.getElementById("cool-" + k); if (el) el.style.width = Math.max(0, Math.min(100, 100 - (cool[k] - Date.now()) / (k === "sugar" ? 20 : 40))) + "%"; }
+  const other = side === "left" ? "right" : "left", h = state.heat;
+  const ms = document.getElementById("my-score"); if (ms) { ms.textContent = w.score[side]; document.getElementById("their-score").textContent = w.score[other]; }
+  const clock = document.getElementById("clock");
+  if (clock) clock.innerHTML = h.phase === "playing" ? `<b>${Math.ceil(h.time_left)}</b> s` : h.phase === "countdown" ? `<b>${Math.ceil(h.time_left)}</b>` :
+    h.phase === "over" ? (h.winner === side ? "YOU WIN" : h.winner === "draw" ? "DRAW" : "THEY WIN") : "waiting for the host";
 }
 requestAnimationFrame(drawMini);
+function banner(text, ms) { const b = $("banner"); b.textContent = text; b.classList.add("show"); setTimeout(() => b.classList.remove("show"), ms); }
 
-// ---- role picker
+// ---------------------------------------------------------------- sense roles (demo mode)
 for (const r of ROLES) {
   const b = document.createElement("button");
   b.className = "role" + (r.wide ? " wide" : ""); b.textContent = r.label; b.style.background = COLOURS[r.id];
   b.addEventListener("click", () => { buzz(30); chooseRole(r); });
-  $("roles").appendChild(b);
+  $("rolegrid").appendChild(b);
 }
-$("change").addEventListener("click", () => { releaseAll(); role = null; sock.send({ type: "join", role: null }); show("pick"); try { localStorage.removeItem("role"); } catch {} });
-
-function show(id) { for (const s of document.querySelectorAll(".screen")) s.classList.toggle("show", s.id === id); }
-
+$("more").addEventListener("click", () => show("roles"));
+$("back").addEventListener("click", () => show("pick"));
+$("change").addEventListener("click", () => { releaseAll(); role = null; side = null; sock.send({ type: "join", role: null }); show("pick"); });
 function chooseRole(r) {
-  role = r; try { localStorage.setItem("role", r.id); } catch {}
+  role = r; side = null; sock.send({ type: "join_duel", name: myName || "?", side: null });
   $("who").textContent = r.label.toUpperCase(); $("who").style.color = COLOURS[r.id];
   const box = $("buttons"); box.innerHTML = "";
-  if (r.world) {
-    box.innerHTML = `<div class="big-hint">TAP THE ARENA TO DROP SUGAR</div><p class="hint" style="text-align:center">The fly decides whether it wants it. One drop every 2 s.</p>
-      <canvas id="mini"></canvas><div class="cool"><div id="coolbar"></div></div>`;
-    const mini = $("mini");
-    mini.addEventListener("pointerdown", (e) => {
-      e.preventDefault(); if (!state || Date.now() < coolUntil) return;
-      const r2 = mini.getBoundingClientRect();
-      const x = (e.clientX - r2.left) / r2.width * state.arena.w, y = (1 - (e.clientY - r2.top) / r2.height) * state.arena.h;
-      sock.send({ type: "drop", x, y }); buzz(40); coolUntil = Date.now() + 2000;
-    });
-    sock.send({ type: "join", role: null }); show("game"); wakeLock(); return;
-  }
   for (const [btn, text, hint] of r.buttons) {
     const el = document.createElement("div");
     el.className = "fire"; el.style.background = COLOURS[btn]; el.style.color = COLOURS[btn];
@@ -118,8 +160,6 @@ function chooseRole(r) {
   sock.send({ type: "join", role: r.id });
   show("game"); wakeLock();
 }
-
-// ---- hold-to-fire
 function press(btn, el) {
   if (held.has(btn)) return;
   held.add(btn); el.classList.add("down"); buzz(40);
@@ -137,29 +177,34 @@ function releaseAll() {
   for (const el of document.querySelectorAll(".fire")) el.classList.remove("down");
   sock.send({ type: "release_all" });
 }
-function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
-
-// no zoom / scroll / long-press menus anywhere
 for (const ev of ["touchmove", "gesturestart", "gesturechange", "dblclick"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
 document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); else wakeLock(); });
 addEventListener("blur", releaseAll);
-
-// ---- keep the screen on
 let lock = null;
-async function wakeLock() {
-  try { if (navigator.wakeLock && (!lock || lock.released)) lock = await navigator.wakeLock.request("screen"); } catch {}
-}
+async function wakeLock() { try { if (navigator.wakeLock && (!lock || lock.released)) lock = await navigator.wakeLock.request("screen"); } catch {} }
 
-// ---- socket
+// ---------------------------------------------------------------- socket
 sock = connect({
-  onOpen() { $("conn").textContent = "connected"; if (role) { sock.send({ type: "join", role: role.id }); for (const b of held) sock.send({ type: "press", button: b }); } },
+  onOpen() {
+    $("conn").textContent = "connected";
+    if (side) sock.send({ type: "join_duel", name: myName, side });
+    if (role) { sock.send({ type: "join", role: role.id }); for (const b of held) sock.send({ type: "press", button: b }); }
+  },
   onClose() { $("conn").textContent = "reconnecting…"; },
   onMessage(m) {
-    if (m.type === "state") state = m;
-    if (m.type === "fainted") { $("faint").classList.add("show"); setTimeout(() => $("faint").classList.remove("show"), m.seconds * 1000); }
+    if (m.type === "state") {
+      state = m;
+      const ph = m.heat.phase;
+      if (ph !== lastPhase && side) {
+        if (ph === "countdown") banner("GET READY", 2500);
+        if (ph === "playing") banner("GO!", 900);
+        if (ph === "over") banner(m.heat.winner === side ? "YOU WIN!" : m.heat.winner === "draw" ? "DRAW" : "THEY WIN", 4000);
+        lastPhase = ph;
+      }
+    }
+    if (m.type === "fainted") banner("THE FLY FAINTED", m.seconds * 1000);
   },
 });
-try { const saved = localStorage.getItem("role"); const r = ROLES.find((x) => x.id === saved); if (r) chooseRole(r); } catch {}
 </script>
 </body>
 </html>

@@ -33,14 +33,17 @@ from brain import Brain  # noqa: E402  (sim/ is a plain directory, not a package
 from body import Fly     # noqa: E402
 from senses import encode  # noqa: E402
 from world import World, W as WORLD_W, H as WORLD_H, SIGHT_R  # noqa: E402
+HEAT_S = 90.0                 # one duel
+COUNTDOWN_S = 3.0
+OVER_S = 8.0                  # result shown this long, then back to the lobby
+SUGAR_COOLDOWN_S = 2.0        # per phone
+BITTER_COOLDOWN_S = 4.0
 
 # ----------------------------------------------------------------------------- config
 PORT = 8000
 TICK_MS = 50                  # simulated ms per tick -> 20 ticks/s
 DT_MS = 0.5                   # brain integration step
 ARENA_W, ARENA_H = WORLD_W, WORLD_H   # world units (px on the beamer before scaling), from sim/world.py
-DROP_COOLDOWN_S = 2.0         # a phone may place one sugar drop this often
-MAX_DROPS = 8
 HOLD_TIMEOUT_S = 1.5          # a pressed button expires unless the phone re-sends "press"
 FAINT_S = 2.0                 # how long the fly is out after the watchdog fires
 WATCHDOG_ACTIVE = 3000        # active neurons in one tick above this = olfactory runaway
@@ -153,6 +156,12 @@ class Game:
         self.fly = Fly(x=ARENA_W / 2, y=ARENA_H / 2, heading=0.0)
         self.world = World()
         self.senses: list[str] = []
+        # duel / heat
+        self.phase = "lobby"            # lobby | countdown | playing | over
+        self.phase_t = 0.0              # seconds left in the phase (countdown / playing / over)
+        self.duel: dict[str, dict | None] = {"left": None, "right": None}   # side -> {"name", "cid"}
+        self.winner: str | None = None
+        self.leaderboard: dict[str, dict] = {}    # name -> {"wins", "points", "heats"}
         self.sample_rng = np.random.default_rng(0)
         self.groups_json = json.dumps({kind: {name: {side: self.brain.groups[(name, side)].tolist() for side in ("left", "right")}
                                               for name in names}
@@ -172,6 +181,29 @@ class Game:
         self.baseline = self.run_reflex_tests()
         print("reflex baseline (intact brain, Hz): " + "  ".join(f"{k} {v:.0f}" for k, v in self.baseline.items())
               + f"  ({time.time() - t0:.1f}s)", flush=True)
+
+    # ---- duel phases
+    def advance_phase(self, dt):
+        if self.phase == "countdown":
+            self.phase_t -= dt
+            if self.phase_t <= 0:
+                self.phase, self.phase_t = "playing", HEAT_S
+        elif self.phase == "playing":
+            self.phase_t -= dt
+            if self.phase_t <= 0:
+                sc = self.world.score
+                self.winner = "left" if sc["left"] > sc["right"] else "right" if sc["right"] > sc["left"] else "draw"
+                for side, p in self.duel.items():
+                    if p:
+                        row = self.leaderboard.setdefault(p["name"], {"wins": 0, "points": 0, "heats": 0})
+                        row["points"] += sc[side]; row["heats"] += 1; row["wins"] += int(self.winner == side)
+                self.phase, self.phase_t = "over", OVER_S
+                print(f"HEAT over: {self.duel['left'] and self.duel['left']['name']} {sc['left']} - {sc['right']} "
+                      f"{self.duel['right'] and self.duel['right']['name']} -> {self.winner}", flush=True)
+        elif self.phase == "over":
+            self.phase_t -= dt
+            if self.phase_t <= 0:
+                self.phase, self.phase_t = "lobby", 0.0
 
     # ---- Neuron Jenga
     def run_reflex_tests(self) -> dict:
@@ -204,11 +236,35 @@ class Game:
             except queue.Empty:
                 break
             if action == "drop":
-                x, y = block_id
-                if 0 <= x <= ARENA_W and 0 <= y <= ARENA_H:
-                    if len(self.world.drops) >= MAX_DROPS:
-                        self.world.drops.pop(0)
-                    self.world.drops.append([x, y])
+                x, y, kind, side = block_id
+                if not (0 <= x <= ARENA_W and 0 <= y <= ARENA_H) or self.phase == "over":
+                    continue
+                if side in ("left", "right"):          # duel rules: sugar on your half, bitter on theirs
+                    if kind == "sugar" and self.world.half(x) != side:
+                        continue
+                    if kind == "bitter" and self.world.half(x) == side:
+                        continue
+                what = self.world.add_drop(x, y, bitter=(kind == "bitter"))
+                self.world.events.append((self.tick * TICK_MS / 1000.0, "SPOILED!" if what == "spoiled" else ""))
+                continue
+            if action == "heat":
+                if block_id == "start" and self.phase in ("lobby", "over"):
+                    self.world.reset_round(self.fly); self.brain.reset()
+                    self.phase, self.phase_t, self.winner = "countdown", COUNTDOWN_S, None
+                elif block_id == "stop":
+                    self.phase, self.phase_t, self.winner = "lobby", 0.0, None
+                elif block_id == "reset_scores":
+                    self.leaderboard = {}
+                elif block_id == "clear_players":
+                    self.duel = {"left": None, "right": None}
+                continue
+            if action == "join_duel":
+                name, side, cid = block_id
+                for s in ("left", "right"):            # one seat per phone, one phone per seat
+                    if self.duel[s] and self.duel[s]["cid"] == cid:
+                        self.duel[s] = None
+                if side in self.duel:
+                    self.duel[side] = {"name": name, "cid": cid}
                 continue
             if action == "pull" and block_id in self.blocks:
                 b = self.blocks[block_id]
@@ -281,7 +337,9 @@ class Game:
                 rates = {}
             else:
                 # what the world does to the senses (sim/senses.py) + what the phones add (direct lines)
-                rates, self.senses = encode(self.fly, self.world.drops, self.world.hazards(self.fly), self.world.on_drop(self.fly))
+                d = self.world.on_drop(self.fly)
+                rates, self.senses = encode(self.fly, self.world.drop_xy(), self.world.hazards(self.fly),
+                                            bool(d and d["sugar"]), bool(d and d["bitter"]))
                 for group, sides in inputs.rates(held).items():
                     for side, hz in sides.items():
                         rates.setdefault(group, {})[side] = max(rates.get(group, {}).get(side, 0), hz)
@@ -298,10 +356,11 @@ class Game:
                     print(f"WATCHDOG: {active} active neurons in one tick -> brain reset, fly fainted", flush=True)
                     hub.send_from_thread({"type": "fainted", "active": active, "seconds": FAINT_S})
                 else:
-                    if self.world.fly_dead <= 0:
+                    if self.world.fly_dead <= 0 and self.phase != "countdown":
                         self.fly.update(out, TICK_MS / 1000.0)
                     self.world.update(self.fly, TICK_MS / 1000.0, self.tick * TICK_MS / 1000.0)   # walls, eating, spider, respawn
             self.tick += 1
+            self.advance_phase(TICK_MS / 1000.0)
             tick_ms = (time.perf_counter() - t_start) * 1000
             # binary frame for the brain view: uint32 tick, then uint32 events (chunk << 18 | neuron index)
             hub.send_from_thread(np.uint32(self.tick).tobytes() + ev.tobytes())
@@ -316,13 +375,18 @@ class Game:
                 "held": sorted(held),
                 "senses": self.senses if not fainted else [],
                 "rates": {f"{g}_{s}": round(hz) for g, sides in (rates.items() if not fainted else []) for s, hz in sides.items()},
-                "world": {"drops": [[round(x), round(y)] for x, y in self.world.drops],
+                "world": {"drops": [{"x": round(d["x"]), "y": round(d["y"]), "bitter": d["bitter"], "sugar": d["sugar"]} for d in self.world.drops],
                           "spider": [round(self.world.spider[0]), round(self.world.spider[1])],
+                          "lair": [round(self.world.spider_home[0]), round(self.world.spider_home[1])],
                           "spider_state": self.world.spider_state, "spider_closing": self.world.spider_closing, "sight_r": SIGHT_R,
                           "fly_dead": self.world.fly_dead > 0,
                           "eating": round(self.world.eating / 1.5, 2),
                           "score": self.world.score, "caught": self.world.caught,
-                          "events": [e for t_ev, e in self.world.events if t_ev > (self.tick - 20) * TICK_MS / 1000.0]},
+                          "events": [e for t_ev, e in self.world.events if e and t_ev > (self.tick - 20) * TICK_MS / 1000.0]},
+                "heat": {"phase": self.phase, "time_left": round(self.phase_t, 1), "winner": self.winner,
+                         "players": {s: (p["name"] if p else None) for s, p in self.duel.items()},
+                         "leaderboard": sorted(({"name": n, **v} for n, v in self.leaderboard.items()),
+                                               key=lambda r: (-r["wins"], -r["points"], r["name"]))[:10]},
                 "fainted": fainted,
                 "players": [p for p in inputs.players.values()],
                 "perf": {"brain_ms": round(brain_ms), "tick_ms": round(tick_ms)},
@@ -403,7 +467,7 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     cid = id(ws)
     hub.clients[cid] = ws
-    last_drop = -1e9
+    last_drop = {"sugar": -1e9, "bitter": -1e9}
     try:
         await ws.send_text(json.dumps(game.jenga_state()))
         while True:
@@ -430,10 +494,17 @@ async def ws_endpoint(ws: WebSocket):
                 if msg.get("spikes"):
                     await ws.send_bytes(game.dead_frame())
             elif t == "drop":
+                kind = "bitter" if msg.get("kind") == "bitter" else "sugar"
                 now = time.monotonic()
-                if now - last_drop >= DROP_COOLDOWN_S:
-                    last_drop = now
-                    game.cmds.put(("drop", (float(msg.get("x", 0)), float(msg.get("y", 0)))))
+                if now - last_drop[kind] >= (BITTER_COOLDOWN_S if kind == "bitter" else SUGAR_COOLDOWN_S):
+                    last_drop[kind] = now
+                    side = next((s for s, p in game.duel.items() if p and p["cid"] == cid), None)
+                    game.cmds.put(("drop", (float(msg.get("x", 0)), float(msg.get("y", 0)), kind, side)))
+            elif t == "join_duel":
+                name = str(msg.get("name", ""))[:16].strip() or "?"
+                game.cmds.put(("join_duel", (name, msg.get("side"), cid)))
+            elif t == "heat":
+                game.cmds.put(("heat", msg.get("action")))
             elif t == "ping":
                 await ws.send_text('{"type":"pong"}')
     except (WebSocketDisconnect, RuntimeError):

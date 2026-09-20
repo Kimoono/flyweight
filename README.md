@@ -19,10 +19,11 @@ python server.py                # the game: beamer on /, phones on /play (QR in 
 ```
 
 What exists today: the simulator (`sim/brain.py`), a tiny body model (`sim/body.py`),
-the neuron lists (`data/neurons.json`), the test results (`docs/findings.md`) and the
-first playable slice: `server.py` + `web/` (arena on the beamer, hold-to-fire phone
-controller), the live brain view with slow-motion replay, and Neuron Jenga (`/host`).
-What needs building: game rules, heats, voting — see `CLAUDE.md`.
+the neuron lists (`data/neurons.json`), the test results (`docs/findings.md`) and the game:
+`server.py` + `web/`. Two players lure one fly ("Lure the fly": sugar on your half, bitter on
+theirs, a spider with a lair, 90 s heats, leaderboard), the beamer shows the arena, the live
+brain view with slow-motion replay, and `/host` runs heats (and Neuron Jenga as a finale).
+Still to do: balance, sound, a dress rehearsal on real phones — see `CLAUDE.md`.
 
 ## Licences
 Simulator model: Shiu et al., MIT. FlyWire connectome data: **non-commercial use**, cite

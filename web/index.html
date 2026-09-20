@@ -31,8 +31,14 @@
   #held { position: absolute; left: 18px; top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
   .chip { padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; color: #000; opacity: .25; }
   .chip.on { opacity: 1; }
-  #score { position: absolute; left: 18px; bottom: 14px; font-size: 22px; font-weight: 800; letter-spacing: 1px; color: #e8ecf1; }
-  #score span { color: #9aa3ad; font-weight: 500; font-size: 15px; margin-left: 10px; }
+  #score { position: absolute; left: 18px; right: 18px; bottom: 10px; display: flex; align-items: baseline; gap: 18px; font-size: 22px; font-weight: 800; letter-spacing: 1px; }
+  #score .l { color: #3b82f6; } #score .r { color: #f59e0b; margin-left: auto; } #score .clock { color: #e8ecf1; font-size: 30px; font-variant-numeric: tabular-nums; }
+  #score .clock.low { color: #ef4444; } #score small { color: #9aa3ad; font-weight: 500; font-size: 14px; }
+  #board { position: absolute; right: 18px; top: 12px; background: rgba(21,26,35,.9); border-radius: 14px; padding: 10px 14px; font-size: 14px; display: none; min-width: 220px; }
+  #board.show { display: block; } #board h3 { margin: 0 0 6px; font-size: 13px; letter-spacing: 2px; color: #9aa3ad; }
+  #board table { border-collapse: collapse; } #board td { padding: 2px 8px 2px 0; } #board td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  #heat-banner { position: absolute; left: 0; right: 0; top: 30%; text-align: center; font-size: 96px; font-weight: 900; letter-spacing: 4px; pointer-events: none; display: none; text-shadow: 0 0 40px #000; }
+  #heat-banner.show { display: block; } #heat-banner small { display: block; font-size: 28px; font-weight: 600; letter-spacing: 1px; color: #9aa3ad; }
   #flash { position: absolute; left: 0; right: 0; top: 40%; text-align: center; font-size: 64px; font-weight: 900; letter-spacing: 3px;
     pointer-events: none; opacity: 0; transition: opacity .3s; text-shadow: 0 0 30px #000; }
   #flash.show { opacity: 1; transition: none; }
@@ -73,6 +79,8 @@
       <div id="jenga"><h2>NEURON JENGA</h2><div class="dead"></div><ul></ul><div class="board"></div></div>
       <div id="score"></div>
       <div id="flash"></div>
+      <div id="board"></div>
+      <div id="heat-banner"></div>
     </div>
     <div id="brain-wrap" class="panel">
       <canvas id="brain"></canvas>
@@ -286,6 +294,9 @@ function drawArena() {
   // World -> screen: body.py uses maths coordinates (y up, heading counter-clockwise), so flip y.
   ctx.setTransform(s, 0, 0, -s, ox, oy);
   ctx.fillStyle = "#11161f"; ctx.fillRect(0, 0, aw, ah);
+  ctx.fillStyle = "rgba(59,130,246,.07)"; ctx.fillRect(0, 0, aw / 2, ah);
+  ctx.fillStyle = "rgba(245,158,11,.07)"; ctx.fillRect(aw / 2, 0, aw / 2, ah);
+  ctx.strokeStyle = "#374151"; ctx.lineWidth = 3; ctx.setLineDash([14, 10]); ctx.beginPath(); ctx.moveTo(aw / 2, 0); ctx.lineTo(aw / 2, ah); ctx.stroke(); ctx.setLineDash([]);
   ctx.strokeStyle = "#1f2937"; ctx.lineWidth = 2 / s; ctx.strokeRect(0, 0, aw, ah);
   ctx.beginPath();
   for (let x = 200; x < aw; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, ah); }
@@ -301,14 +312,21 @@ function drawArena() {
     }
   }
   const f = state.fly, held = new Set(state.held), w = state.world, senses = state.senses || [];
-  // sugar drops
-  for (const [dx, dy] of w.drops) {
-    ctx.fillStyle = "rgba(138,201,38,.25)"; ctx.beginPath(); ctx.arc(dx, dy, 28, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = COLOURS.sugar; ctx.beginPath(); ctx.arc(dx, dy, 12, 0, Math.PI * 2); ctx.fill();
+  // the spider's lair
+  const [lx, ly] = w.lair;
+  ctx.strokeStyle = "rgba(239,68,68,.35)"; ctx.lineWidth = 2; ctx.setLineDash([3, 6]);
+  for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI; ctx.beginPath(); ctx.moveTo(lx - 50 * Math.cos(a), ly - 50 * Math.sin(a)); ctx.lineTo(lx + 50 * Math.cos(a), ly + 50 * Math.sin(a)); ctx.stroke(); }
+  ctx.setLineDash([]);
+  // drops: green = sugar, yellow = bitter (spoiled drop or bitter puddle)
+  for (const d of w.drops) {
+    const c = d.bitter ? COLOURS.bitter : COLOURS.sugar;
+    ctx.fillStyle = d.bitter ? "rgba(255,209,102,.2)" : "rgba(138,201,38,.25)"; ctx.beginPath(); ctx.arc(d.x, d.y, 28, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = c; ctx.beginPath(); ctx.arc(d.x, d.y, 12, 0, Math.PI * 2); ctx.fill();
+    if (d.bitter && d.sugar) { ctx.strokeStyle = "#0b0e14"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(d.x - 7, d.y - 7); ctx.lineTo(d.x + 7, d.y + 7); ctx.moveTo(d.x - 7, d.y + 7); ctx.lineTo(d.x + 7, d.y - 7); ctx.stroke(); }
   }
   // what the eyes see: a line from the fly to each drop in view, in that eye's colour
   if (senses.some((x) => x.startsWith("drop"))) {
-    for (const [dx, dy] of w.drops) {
+    for (const { x: dx, y: dy } of w.drops) {
       const d = Math.hypot(dx - f.x, dy - f.y); if (d > 700) continue;
       let b = Math.atan2(dy - f.y, dx - f.x) - f.heading; b = Math.atan2(Math.sin(b), Math.cos(b));
       if (Math.abs(b) < 0.15 || Math.abs(b) > 2.6) continue;
@@ -422,10 +440,22 @@ const sock = connect({
     const lit = { left_eye: sensed.has("drop left"), right_eye: sensed.has("drop right"), left_shadow: sensed.has("shadow left"),
                   right_shadow: sensed.has("shadow right"), sugar: sensed.has("sugar"), bitter: sensed.has("bitter") };
     for (const b of Object.keys(COLOURS)) $("chip-" + b).classList.toggle("on", held.has(b) || lit[b]);
-    $("score").innerHTML = `${m.world.score} EATEN <span>${m.world.caught} caught by the spider</span>`;
+    const h = m.heat, pl = h.players, sc = m.world.score;
+    const clock = h.phase === "playing" ? Math.ceil(h.time_left) + " s" : h.phase === "countdown" ? Math.ceil(h.time_left) : h.phase === "over" ? "TIME" : "";
+    $("score").innerHTML = `<span class="l">${pl.left || "LEFT"} ${sc.left}</span><span class="clock ${h.phase === "playing" && h.time_left < 10 ? "low" : ""}">${clock}</span>` +
+      `<small>${h.phase === "lobby" ? "waiting for the host · " : ""}${m.world.caught} caught by the spider</small><span class="r">${sc.right} ${pl.right || "RIGHT"}</span>`;
+    const hb = $("heat-banner");
+    if (h.phase === "countdown") { hb.innerHTML = `${Math.ceil(h.time_left)}<small>${pl.left || "LEFT"} vs ${pl.right || "RIGHT"}</small>`; hb.classList.add("show"); }
+    else if (h.phase === "over") { const wn = h.winner === "draw" ? "DRAW" : (pl[h.winner] || h.winner.toUpperCase()) + " WINS"; hb.innerHTML = `${wn}<small>${sc.left} – ${sc.right}</small>`; hb.style.color = h.winner === "left" ? "#3b82f6" : h.winner === "right" ? "#f59e0b" : "#e8ecf1"; hb.classList.add("show"); }
+    else { hb.classList.remove("show"); hb.style.color = ""; }
+    const lb = h.leaderboard || [], board = $("board");
+    if (lb.length && !$("jenga").classList.contains("show")) {
+      board.classList.add("show");
+      board.innerHTML = "<h3>LEADERBOARD</h3><table>" + lb.map((r) => `<tr><td>${r.name}</td><td class="n">${r.wins} W</td><td class="n">${r.points} pts</td></tr>`).join("") + "</table>";
+    } else board.classList.remove("show");
     for (const e of m.world.events) if (e !== lastEvent.name || m.tick - lastEvent.tick > 20) {
       lastEvent = { name: e, tick: m.tick };
-      const fl = $("flash"); fl.textContent = e === "EAT" ? "NOM!" : e === "CAUGHT" ? "GOT YOU!" : e; fl.style.color = e === "EAT" ? "#8ac926" : "#ef4444";
+      const fl = $("flash"); fl.textContent = e === "EAT" ? "NOM!" : e === "CAUGHT" ? "GOT YOU!" : e; fl.style.color = e === "EAT" ? "#8ac926" : e === "SPOILED!" ? "#ffd166" : "#ef4444";
       if (e === "SPIDER!") fl.style.fontSize = "40px"; else fl.style.fontSize = "";
       fl.classList.add("show"); setTimeout(() => fl.classList.remove("show"), e === "CAUGHT" ? 1500 : 700);
     }

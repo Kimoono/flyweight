@@ -29,8 +29,20 @@
 </style>
 </head>
 <body>
-<h1>NEURON JENGA</h1>
-<p class="hint">Pull a block out of the brain. Let the team predict what breaks, then test the reflexes (or let the players press their buttons). Everything is reversible.</p>
+<h1>HOST</h1>
+<div class="results show" id="heat">
+  <div class="bar" style="margin:0 0 8px">
+    <button class="check" id="start" style="background:#22c55e">START HEAT (90 s)</button>
+    <button id="stop" style="background:#374151;color:#e8ecf1">STOP</button>
+    <button id="clear" style="background:#374151;color:#e8ecf1">CLEAR SEATS</button>
+    <button id="resetlb" style="background:#374151;color:#e8ecf1">RESET LEADERBOARD</button>
+    <span class="status" id="heat-status"></span>
+  </div>
+  <div id="seats" style="font-size:16px;margin:6px 0"></div>
+  <div id="lb" class="log"></div>
+</div>
+<h1 style="margin-top:18px">NEURON JENGA <small style="font-size:13px;color:#9aa3ad;font-weight:400">(optional finale)</small></h1>
+<p class="hint">Pull a block out of the brain. Let the room predict what breaks, then test the reflexes. Everything is reversible.</p>
 <div class="bar">
   <button class="check" id="check">TEST THE REFLEXES</button>
   <button class="restore" id="restore">RESTORE THE WHOLE BRAIN</button>
@@ -45,8 +57,18 @@ let jenga = null;
 const sock = connect({
   onOpen() { $("status").textContent = "connected"; },
   onClose() { $("status").textContent = "reconnecting…"; },
-  onMessage(m) { if (m.type === "jenga") { jenga = m; render(); } },
+  onMessage(m) { if (m.type === "jenga") { jenga = m; render(); } if (m.type === "state") renderHeat(m); },
 });
+for (const [id, action] of [["start", "start"], ["stop", "stop"], ["clear", "clear_players"], ["resetlb", "reset_scores"]])
+  $(id).addEventListener("click", () => { if (action === "reset_scores" && !confirm("Reset the leaderboard?")) return; sock.send({ type: "heat", action }); });
+let lastHeat = 0;
+function renderHeat(m) {
+  if (Date.now() - lastHeat < 250) return; lastHeat = Date.now();
+  const h = m.heat, sc = m.world.score;
+  $("heat-status").textContent = h.phase === "playing" ? `playing · ${Math.ceil(h.time_left)} s left · ${sc.left} – ${sc.right}` : h.phase === "countdown" ? "countdown" : h.phase === "over" ? `over · ${h.winner}` : "lobby";
+  $("seats").innerHTML = `<span style="color:#3b82f6;font-weight:800">LEFT</span> ${h.players.left || "<i style='color:#6b7280'>empty seat</i>"} &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:800">RIGHT</span> ${h.players.right || "<i style='color:#6b7280'>empty seat</i>"}`;
+  $("lb").textContent = h.leaderboard.length ? "Leaderboard: " + h.leaderboard.map((r) => `${r.name} ${r.wins}W/${r.points}pts`).join(", ") : "No heats played yet. Players pick a seat on their phone, then START HEAT.";
+}
 $("check").addEventListener("click", () => sock.send({ type: "jenga", action: "check" }));
 $("restore").addEventListener("click", () => { if (confirm("Restore all neurons?")) sock.send({ type: "jenga", action: "restore" }); });
 
