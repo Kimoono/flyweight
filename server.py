@@ -20,6 +20,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import numpy as np
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -38,6 +39,8 @@ ARENA_W, ARENA_H = 1600.0, 900.0   # world units (px on the beamer before scalin
 HOLD_TIMEOUT_S = 1.5          # a pressed button expires unless the phone re-sends "press"
 FAINT_S = 2.0                 # how long the fly is out after the watchdog fires
 WATCHDOG_ACTIVE = 3000        # active neurons in one tick above this = olfactory runaway
+CHUNK_MS = 5                  # spike-time resolution sent to the brain view (10 chunks per tick)
+SPIKE_SAMPLE = 4000           # max spike events per tick sent to the brain view (random sample beyond)
 
 # Button -> (sense group, side, Hz). Taste rates are low on purpose: a button is HELD for
 # seconds, and sustained sugar >= 60 Hz or bitter 150 Hz ignites the olfactory runaway
@@ -102,18 +105,18 @@ class Hub:
         self.clients: dict[int, WebSocket] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
 
-    async def broadcast(self, msg: dict):
-        data = json.dumps(msg, separators=(",", ":"))
+    async def broadcast(self, msg):
+        data = msg if isinstance(msg, bytes) else json.dumps(msg, separators=(",", ":"))
         dead = []
         for cid, ws in list(self.clients.items()):
             try:
-                await ws.send_text(data)
+                await (ws.send_bytes(data) if isinstance(data, bytes) else ws.send_text(data))
             except Exception:
                 dead.append(cid)
         for cid in dead:
             self.clients.pop(cid, None)
 
-    def send_from_thread(self, msg: dict):
+    def send_from_thread(self, msg):
         if self.loop is not None and self.clients:
             asyncio.run_coroutine_threadsafe(self.broadcast(msg), self.loop)
 
@@ -129,10 +132,34 @@ class Game:
         self.brain = Brain(dt=DT_MS)
         print(f"brain loaded: {self.brain.n} neurons in {time.time() - t0:.1f}s, dt={DT_MS} ms")
         self.fly = Fly(x=ARENA_W / 2, y=ARENA_H / 2, heading=0.0)
+        self.sample_rng = np.random.default_rng(0)
+        self.groups_json = json.dumps({kind: {name: {side: self.brain.groups[(name, side)].tolist() for side in ("left", "right")}
+                                              for name in names}
+                                       for kind, names in (("senses", sorted({n for n, _ in self.brain.groups} - set(self.brain.output_names))),
+                                                           ("outputs", self.brain.output_names))})
         self.fainted_until = 0.0
         self.faints = 0
         self.tick = 0
         self.stop = threading.Event()
+
+    def step_tick(self):
+        """brain.step(TICK_MS) in CHUNK_MS pieces so the brain view can show spike order inside a
+        tick. Returns (outputs, active, spike events) - same outputs brain.step() would return."""
+        counts = np.zeros(self.brain.n, np.int32)
+        events = []
+        for c in range(TICK_MS // CHUNK_MS):
+            cnt = self.brain.step(CHUNK_MS, return_counts=True)
+            counts += cnt
+            spk = np.flatnonzero(cnt)
+            if len(spk):
+                events.append(spk.astype(np.uint32) | np.uint32(c << 18))   # neuron index < 2^18
+        sec = TICK_MS / 1000.0
+        out = {name: {s: float(counts[self.brain.groups[(name, s)]].mean() / sec) for s in ("left", "right")}
+               for name in self.brain.output_names}
+        ev = np.concatenate(events) if events else np.empty(0, np.uint32)
+        if len(ev) > SPIKE_SAMPLE:
+            ev = np.sort(self.sample_rng.choice(ev, SPIKE_SAMPLE, replace=False))
+        return out, int((counts > 0).sum()), ev
 
     def run(self):
         period = TICK_MS / 1000.0
@@ -148,10 +175,11 @@ class Game:
                 out = {name: {"left": 0.0, "right": 0.0} for name in self.brain.output_names}
                 active = 0
                 brain_ms = 0.0
+                ev = np.empty(0, np.uint32)
             else:
                 self.brain.set_input(inputs.rates(held))
                 tb = time.perf_counter()
-                out, active = self.brain.step(TICK_MS)
+                out, active, ev = self.step_tick()
                 brain_ms = (time.perf_counter() - tb) * 1000
                 if active > WATCHDOG_ACTIVE:
                     # Trap 1 in docs/findings.md: olfactory runaway. Reset and fail funny.
@@ -168,6 +196,8 @@ class Game:
                     self.fly.y %= ARENA_H
             self.tick += 1
             tick_ms = (time.perf_counter() - t_start) * 1000
+            # binary frame for the brain view: uint32 tick, then uint32 events (chunk << 18 | neuron index)
+            hub.send_from_thread(np.uint32(self.tick).tobytes() + ev.tobytes())
             hub.send_from_thread({
                 "type": "state",
                 "tick": self.tick,
@@ -226,6 +256,25 @@ async def index():
 @app.get("/play")
 async def play():
     return FileResponse(WEB / "play.html")
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    from fastapi.responses import Response
+    return Response(status_code=204)
+
+
+@app.get("/positions.bin")
+async def positions():
+    """float32 (x, y, z) per neuron in simulator index order; built by sim/build_positions.py."""
+    return FileResponse(ROOT / "data" / "positions.bin", media_type="application/octet-stream")
+
+
+@app.get("/groups.json")
+async def groups():
+    """Neuron indices of every sense and output group, per side (for colouring the brain view)."""
+    from fastapi.responses import Response
+    return Response(game.groups_json, media_type="application/json")
 
 
 @app.websocket("/ws")

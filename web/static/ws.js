@@ -1,12 +1,17 @@
 // Tiny auto-reconnecting WebSocket. Usage:
-//   const sock = connect({ onOpen, onMessage, onClose });  sock.send(obj)
-export function connect({ onOpen, onMessage, onClose } = {}) {
+//   const sock = connect({ onOpen, onMessage, onBinary, onClose });  sock.send(obj)
+// Text frames are parsed as JSON -> onMessage(obj); binary frames -> onBinary(ArrayBuffer).
+export function connect({ onOpen, onMessage, onBinary, onClose } = {}) {
   const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
   let ws = null, tries = 0, closed = false;
   function open() {
     ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
     ws.onopen = () => { tries = 0; onOpen && onOpen(); };
-    ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } onMessage && onMessage(m); };
+    ws.onmessage = (e) => {
+      if (e.data instanceof ArrayBuffer) { onBinary && onBinary(e.data); return; }
+      let m; try { m = JSON.parse(e.data); } catch { return; } onMessage && onMessage(m);
+    };
     ws.onclose = () => {
       onClose && onClose();
       if (closed) return;

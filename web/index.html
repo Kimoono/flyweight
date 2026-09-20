@@ -13,7 +13,10 @@
   header { display: flex; align-items: baseline; gap: 24px; padding: 10px 24px; }
   header h1 { margin: 0; font-size: 28px; letter-spacing: 1px; }
   header .status { margin-left: auto; color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
-  #stage { flex: 1; position: relative; min-height: 0; }
+  #stage { flex: 1; display: flex; gap: 12px; padding: 0 12px; min-height: 0; }
+  .panel { position: relative; min-width: 0; }
+  #arena-wrap { flex: 3; }
+  #brain-wrap { flex: 2; background: var(--panel); border-radius: 16px; overflow: hidden; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #labels { display: flex; gap: 12px; padding: 12px 24px 18px; }
   .label { flex: 1; text-align: center; padding: 18px 8px; border-radius: 14px; background: var(--panel);
@@ -22,12 +25,24 @@
   .label.on { transform: scale(1.03); }
   .label small { display: block; font-size: 14px; font-weight: 500; letter-spacing: 0; opacity: .7; margin-top: 4px; }
   #faint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
-    background: rgba(11,14,20,.75); font-size: 72px; font-weight: 900; letter-spacing: 3px; text-align: center; }
+    background: rgba(11,14,20,.75); font-size: 64px; font-weight: 900; letter-spacing: 3px; text-align: center; }
   #faint.show { display: flex; }
-  #faint small { display: block; font-size: 26px; font-weight: 400; margin-top: 12px; opacity: .8; }
+  #faint small { display: block; font-size: 24px; font-weight: 400; margin-top: 12px; opacity: .8; }
   #held { position: absolute; left: 18px; top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
   .chip { padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; color: #000; opacity: .25; }
   .chip.on { opacity: 1; }
+  #brain-top { position: absolute; left: 14px; right: 14px; top: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+  #brain-top .title { font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #9aa3ad; }
+  #brain-top .spacer { flex: 1; }
+  #replay-btn { pointer-events: auto; background: #1f2937; color: var(--ink); border: 1px solid #374151; border-radius: 999px;
+    padding: 7px 14px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  #replay-btn:hover { background: #374151; }
+  #replay-info { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; display: none; pointer-events: none; }
+  #replay-info.show { display: block; }
+  #replay-info .big { font-size: 26px; font-weight: 900; letter-spacing: 2px; color: #fbbf24; }
+  #replay-info .t { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #replay-info .chips { display: flex; justify-content: center; gap: 8px; margin-top: 6px; }
+  #replay-info .chips .chip { opacity: 1; }
 </style>
 </head>
 <body>
@@ -37,9 +52,20 @@
     <span id="conn" class="status">connecting…</span>
   </header>
   <div id="stage">
-    <canvas id="arena"></canvas>
-    <div id="held"></div>
-    <div id="faint">THE FLY FAINTED<small>too much at once — back in a moment</small></div>
+    <div id="arena-wrap" class="panel">
+      <canvas id="arena"></canvas>
+      <div id="held"></div>
+      <div id="faint">THE FLY FAINTED<small>too much at once — back in a moment</small></div>
+    </div>
+    <div id="brain-wrap" class="panel">
+      <canvas id="brain"></canvas>
+      <div id="brain-top">
+        <span class="title" id="brain-title">THE BRAIN · 138,639 NEURONS · LIVE</span>
+        <span class="spacer"></span>
+        <button id="replay-btn" title="key R">⏪ REPLAY LAST 1.5 s IN SLOW MOTION</button>
+      </div>
+      <div id="replay-info"><div class="big">SLOW MOTION · 1/10 SPEED</div><div class="t">+0 ms</div><div class="chips"></div></div>
+    </div>
   </div>
   <div id="labels">
     <div class="label" id="l-turnleft"  style="background:#3b82f6">TURN LEFT<small>&nbsp;</small></div>
@@ -57,41 +83,180 @@ const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9
 const NAMES = { left_eye: "Left eye", right_eye: "Right eye", left_shadow: "Left shadow", right_shadow: "Right shadow", sugar: "Sugar", bitter: "Bitter" };
 // Output rate (Hz) at which a label is fully lit. From docs/findings.md.
 const FULL = { turnleft: 140, turnright: 70, panic: 150, hungry: 60, walk: 110 };
+const TICK_MS = 50, CHUNK_MS = 5;
 
-const canvas = document.getElementById("arena"), ctx = canvas.getContext("2d");
-const heldEl = document.getElementById("held"), faintEl = document.getElementById("faint"), connEl = document.getElementById("conn");
+const $ = (id) => document.getElementById(id);
+const arena = $("arena"), actx = arena.getContext("2d");
+const brain = $("brain"), bctx = brain.getContext("2d");
 for (const b of Object.keys(COLOURS)) {
   const c = document.createElement("span"); c.className = "chip"; c.id = "chip-" + b; c.textContent = NAMES[b];
-  c.style.background = COLOURS[b]; heldEl.appendChild(c);
+  c.style.background = COLOURS[b]; $("held").appendChild(c);
 }
 
-let state = null, trail = [], faintTimer = null, lastFrame = performance.now(), frames = 0, fps = 0;
+let state = null, trail = [], faintTimer = null;
 
 function setLabel(id, hz, full) {
-  const el = document.getElementById("l-" + id);
-  const v = Math.min(1, hz / full);
+  const el = $("l-" + id), v = Math.min(1, hz / full);
   el.style.opacity = 0.18 + 0.82 * v;
   el.style.boxShadow = v > 0.3 ? `0 0 ${30 * v}px ${el.style.background}` : "none";
   el.classList.toggle("on", v > 0.3);
-  el.querySelector("small").textContent = hz > 0 ? hz + " Hz" : " ";
+  el.querySelector("small").textContent = hz > 0 ? Math.round(hz) + " Hz" : " ";
+}
+function setLabels(o) {
+  setLabel("turnleft", o.turn.left, FULL.turnleft);
+  setLabel("turnright", o.turn.right, FULL.turnright);
+  setLabel("panic", (o.escape.left + o.escape.right) / 2, FULL.panic);
+  setLabel("hungry", (o.feed.left + o.feed.right) / 2, FULL.hungry);
+  setLabel("walk", (o.walk.left + o.walk.right) / 2, FULL.walk);
 }
 
+// ------------------------------------------------------------------ brain view data
+// Neuron classes for colouring: 0 = any other neuron.
+const CLASSES = [
+  { key: "none", colour: [232, 236, 241] },
+  { key: "left_eye", group: ["senses", "eye_target", "left"], colour: [255, 77, 109] },
+  { key: "right_eye", group: ["senses", "eye_target", "right"], colour: [255, 159, 28] },
+  { key: "left_shadow", group: ["senses", "shadow", "left"], colour: [76, 201, 240] },
+  { key: "right_shadow", group: ["senses", "shadow", "right"], colour: [199, 125, 255] },
+  { key: "sugar", group: ["senses", "sugar", "*"], colour: [138, 201, 38] },
+  { key: "bitter", group: ["senses", "bitter", "*"], colour: [255, 209, 102] },
+  { key: "turnleft", group: ["outputs", "turn", "left"], colour: [59, 130, 246], label: "TURN LEFT" },
+  { key: "turnright", group: ["outputs", "turn", "right"], colour: [245, 158, 11], label: "TURN RIGHT" },
+  { key: "panic", group: ["outputs", "escape", "*"], colour: [239, 68, 68], label: "PANIC!" },
+  { key: "hungry", group: ["outputs", "feed", "*"], colour: [34, 197, 94], label: "HUNGRY" },
+  { key: "walk", group: ["outputs", "walk", "*"], colour: [168, 85, 247], label: "WALK" },
+];
+let pos = null, N = 0, cls = null, landmarks = [], bounds = null, flipX = false, bg = null, bgW = 0, bgH = 0;
+
+async function loadBrain() {
+  const [buf, groups] = await Promise.all([fetch("/positions.bin").then((r) => r.arrayBuffer()), fetch("/groups.json").then((r) => r.json())]);
+  pos = new Float32Array(buf); N = pos.length / 3; cls = new Uint8Array(N);
+  let minX = 1e12, maxX = -1e12, minY = 1e12, maxY = -1e12;
+  for (let i = 0; i < N; i++) { const x = pos[3 * i], y = pos[3 * i + 1]; if (isNaN(x)) continue;
+    if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+  bounds = { minX, maxX, minY, maxY };
+  CLASSES.forEach((c, k) => {
+    if (!c.group) return;
+    const [kind, name, side] = c.group, g = groups[kind][name];
+    for (const s of side === "*" ? ["left", "right"] : [side]) for (const i of g[s]) { cls[i] = k; if (c.label) landmarks.push({ i, k, side: s }); }
+  });
+  // Show the fly's left on the viewer's left: compare mean x of the two eye groups.
+  const mx = (idx) => idx.reduce((a, i) => a + pos[3 * i], 0) / idx.length;
+  flipX = mx(groups.senses.eye_target.left) > mx(groups.senses.eye_target.right);
+  bg = null;
+}
+loadBrain();
+
+// Screen projection (front view, x = left/right, y = top/bottom) into the brain canvas.
+let proj = { s: 1, ox: 0, oy: 0 };
+function project(i) {
+  let x = pos[3 * i], y = pos[3 * i + 1];
+  if (flipX) x = bounds.maxX - (x - bounds.minX);
+  return [proj.ox + (x - bounds.minX) * proj.s, proj.oy + (y - bounds.minY) * proj.s];
+}
+function renderBackground(W, H) {
+  const pad = 30 * devicePixelRatio, top = 50 * devicePixelRatio, bottom = 70 * devicePixelRatio;
+  const bw = bounds.maxX - bounds.minX, bh = bounds.maxY - bounds.minY;
+  proj.s = Math.min((W - 2 * pad) / bw, (H - top - bottom) / bh);
+  proj.ox = (W - bw * proj.s) / 2; proj.oy = top + (H - top - bottom - bh * proj.s) / 2;
+  bg = document.createElement("canvas"); bg.width = W; bg.height = H; bgW = W; bgH = H;
+  const c = bg.getContext("2d");
+  c.fillStyle = "#151a23"; c.fillRect(0, 0, W, H);
+  const img = c.createImageData(W, H), d = img.data;
+  for (let i = 0; i < N; i++) {
+    if (isNaN(pos[3 * i])) continue;
+    const [x, y] = project(i), px = x | 0, py = y | 0;
+    if (px < 0 || py < 0 || px >= W || py >= H) continue;
+    const o = 4 * (py * W + px), col = CLASSES[cls[i]].colour, a = cls[i] ? 0.55 : 0.16;
+    d[o] = d[o] * (1 - a) + col[0] * a; d[o + 1] = d[o + 1] * (1 - a) + col[1] * a; d[o + 2] = d[o + 2] * (1 - a) + col[2] * a; d[o + 3] = 255;
+  }
+  // canvas is filled with panel colour first; putImageData replaces it, so paint the panel colour into unset pixels
+  for (let o = 0; o < d.length; o += 4) if (!d[o + 3]) { d[o] = 0x15; d[o + 1] = 0x1a; d[o + 2] = 0x23; d[o + 3] = 255; }
+  c.putImageData(img, 0, 0);
+  // landmark output neurons: ring on the neuron, plain-language label in the margin with a leader line.
+  // One label per output per side, stacked so they never overlap.
+  const dpr = devicePixelRatio;
+  c.font = `700 ${13 * dpr}px -apple-system, Helvetica, Arial`; c.textBaseline = "middle";
+  const seen = {}, cols = { left: [], right: [] };
+  for (const l of landmarks) {
+    const [x, y] = project(l.i), col = CLASSES[l.k];
+    c.strokeStyle = `rgb(${col.colour})`; c.lineWidth = 1.5 * dpr;
+    c.beginPath(); c.arc(x, y, 6 * dpr, 0, Math.PI * 2); c.stroke();
+    const key = col.key + l.side; if (seen[key]) continue; seen[key] = 1;
+    cols[x < W / 2 ? "left" : "right"].push({ x, y, col });
+  }
+  for (const side of ["left", "right"]) {
+    const list = cols[side].sort((a, b) => a.y - b.y), gap = 24 * dpr;
+    let ly = Math.max(60 * dpr, list.length ? list[0].y - gap : 0);
+    for (const l of list) {
+      ly = Math.max(ly, l.y - 2 * gap);                       // keep labels near their neuron, but stacked
+      const lx = side === "left" ? 18 * dpr : W - 18 * dpr;
+      c.strokeStyle = `rgba(${l.col.colour},0.55)`; c.lineWidth = 1 * dpr;
+      c.beginPath(); c.moveTo(l.x + (side === "left" ? -7 : 7) * dpr, l.y);
+      c.lineTo(lx + (side === "left" ? 1 : -1) * (c.measureText(l.col.label).width + 8 * dpr), ly); c.stroke();
+      c.textAlign = side; c.fillStyle = `rgb(${l.col.colour})`; c.fillText(l.col.label, lx, ly);
+      ly += gap;
+    }
+  }
+}
+
+// ------------------------------------------------------------------ spike buffer + clock
+// Each tick: { t: sim ms at tick start, ev: Uint32Array(chunk << 18 | index), held, outputs }
+const BUFFER_MS = 4000;
+let ticks = [], latestT = -1, shownT = -1, lastFrame = performance.now();
+let replay = null;   // { frames, start, end, shownT }
+
+function onSpikes(buf) {
+  const a = new Uint32Array(buf), tick = a[0];
+  const t = tick * TICK_MS;
+  ticks.push({ t, tick, ev: a.subarray(1), held: [], outputs: null });
+  latestT = t;
+  while (ticks.length && ticks[0].t < latestT - BUFFER_MS) ticks.shift();
+  if (shownT < 0) shownT = t - 2 * TICK_MS;
+}
+function startReplay() {
+  if (replay || latestT < 0) return;
+  const end = latestT + TICK_MS, start = end - 1500;
+  replay = { frames: ticks.filter((f) => f.t >= start - TICK_MS && f.t < end), start, end, shownT: start };
+  $("replay-info").classList.add("show"); $("brain-title").textContent = "THE BRAIN · 138,639 NEURONS · REPLAY";
+}
+function endReplay() { replay = null; $("replay-info").classList.remove("show"); $("brain-title").textContent = "THE BRAIN · 138,639 NEURONS · LIVE"; }
+$("replay-btn").addEventListener("click", startReplay);
+addEventListener("keydown", (e) => { if (e.key === "r" || e.key === "R") replay ? endReplay() : startReplay(); });
+
+function drawSpikes(frames, now, fade, dpr) {
+  bctx.globalCompositeOperation = "lighter";
+  const r = 1.6 * dpr, rl = 5 * dpr;
+  for (const f of frames) {
+    if (f.t > now || f.t + TICK_MS < now - fade) continue;
+    const ev = f.ev;
+    for (let j = 0; j < ev.length; j++) {
+      const e = ev[j], i = e & 0x3FFFF, te = f.t + (e >>> 18) * CHUNK_MS;
+      const age = now - te; if (age < 0 || age > fade) continue;
+      const k = cls[i], col = CLASSES[k].colour, alpha = (1 - age / fade) * (k ? 1 : 0.7);
+      const [x, y] = project(i);
+      bctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
+      if (k >= 7) { bctx.beginPath(); bctx.arc(x, y, rl + 6 * dpr * (1 - age / fade), 0, Math.PI * 2); bctx.fill(); }
+      else bctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+    }
+  }
+  bctx.globalCompositeOperation = "source-over";
+}
+
+// ------------------------------------------------------------------ frame loop
 function resize() {
-  const r = canvas.getBoundingClientRect();
-  canvas.width = Math.round(r.width * devicePixelRatio); canvas.height = Math.round(r.height * devicePixelRatio);
+  for (const c of [arena, brain]) { const r = c.getBoundingClientRect(); c.width = Math.round(r.width * devicePixelRatio); c.height = Math.round(r.height * devicePixelRatio); }
+  bg = null;
 }
 addEventListener("resize", resize); resize();
 
-function draw() {
-  requestAnimationFrame(draw);
-  frames++; const now = performance.now();
-  if (now - lastFrame > 1000) { fps = frames; frames = 0; lastFrame = now; }
-  const W = canvas.width, H = canvas.height;
+function drawArena() {
+  const W = arena.width, H = arena.height, ctx = actx;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#0b0e14"; ctx.fillRect(0, 0, W, H);
   if (!state) return;
   const aw = state.arena.w, ah = state.arena.h;
-  const s = Math.min((W - 40 * devicePixelRatio) / aw, (H - 40 * devicePixelRatio) / ah);
+  const s = Math.min((W - 20 * devicePixelRatio) / aw, (H - 20 * devicePixelRatio) / ah);
   const ox = (W - aw * s) / 2, oy = (H + ah * s) / 2;
   // World -> screen: body.py uses maths coordinates (y up, heading counter-clockwise), so flip y.
   ctx.setTransform(s, 0, 0, -s, ox, oy);
@@ -101,7 +266,6 @@ function draw() {
   for (let x = 200; x < aw; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, ah); }
   for (let y = 200; y < ah; y += 200) { ctx.moveTo(0, y); ctx.lineTo(aw, y); }
   ctx.stroke();
-  // trail
   if (trail.length > 1) {
     ctx.lineWidth = 3; ctx.lineCap = "round";
     for (let i = 1; i < trail.length; i++) {
@@ -113,47 +277,81 @@ function draw() {
   }
   const f = state.fly, held = new Set(state.held);
   ctx.translate(f.x, f.y); ctx.rotate(f.heading);
-  // shadows looming on a side
   for (const [btn, side] of [["left_shadow", 1], ["right_shadow", -1]]) if (held.has(btn)) {
     ctx.fillStyle = "rgba(76,201,240,.18)"; ctx.beginPath(); ctx.ellipse(-10, side * 70, 60, 40, 0, 0, Math.PI * 2); ctx.fill();
   }
-  // body
   const glow = state.fainted ? "#6b7280" : "#e8ecf1";
-  ctx.fillStyle = "#3a3f4b"; ctx.beginPath(); ctx.ellipse(-22, 0, 26, 16, 0, 0, Math.PI * 2); ctx.fill();   // abdomen
-  ctx.fillStyle = "#2b2f3a"; ctx.beginPath(); ctx.ellipse(-30, 24, 30, 10, 0.25, 0, Math.PI * 2); ctx.fill(); // wings
+  ctx.fillStyle = "#3a3f4b"; ctx.beginPath(); ctx.ellipse(-22, 0, 26, 16, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#2b2f3a"; ctx.beginPath(); ctx.ellipse(-30, 24, 30, 10, 0.25, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(-30, -24, 30, 10, -0.25, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = glow; ctx.beginPath(); ctx.ellipse(6, 0, 18, 13, 0, 0, Math.PI * 2); ctx.fill();          // thorax
-  ctx.fillStyle = "#b8bec8"; ctx.beginPath(); ctx.arc(28, 0, 12, 0, Math.PI * 2); ctx.fill();               // head
-  ctx.fillStyle = held.has("left_eye") ? COLOURS.left_eye : "#7a2035"; ctx.beginPath(); ctx.arc(32, 8, 6, 0, Math.PI * 2); ctx.fill();   // left eye (+y = fly's left)
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.ellipse(6, 0, 18, 13, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#b8bec8"; ctx.beginPath(); ctx.arc(28, 0, 12, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = held.has("left_eye") ? COLOURS.left_eye : "#7a2035"; ctx.beginPath(); ctx.arc(32, 8, 6, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = held.has("right_eye") ? COLOURS.right_eye : "#7a4a15"; ctx.beginPath(); ctx.arc(32, -8, 6, 0, Math.PI * 2); ctx.fill();
-  if (f.feeding) { ctx.strokeStyle = COLOURS.sugar; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(38, 0); ctx.lineTo(62, 0); ctx.stroke(); } // proboscis out
+  if (f.feeding) { ctx.strokeStyle = COLOURS.sugar; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(38, 0); ctx.lineTo(62, 0); ctx.stroke(); }
   if (f.jumped) { ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 70, 0, Math.PI * 2); ctx.stroke(); }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
-requestAnimationFrame(draw);
 
-connect({
-  onOpen() { connEl.textContent = "connected"; },
-  onClose() { connEl.textContent = "reconnecting…"; },
+function drawBrain(dtMs) {
+  const W = brain.width, H = brain.height, dpr = devicePixelRatio;
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (!pos) { bctx.fillStyle = "#151a23"; bctx.fillRect(0, 0, W, H); return; }
+  if (!bg || bgW !== W || bgH !== H) renderBackground(W, H);
+  bctx.drawImage(bg, 0, 0);
+  if (replay) {
+    replay.shownT += dtMs * 0.1;
+    if (replay.shownT > replay.end) { endReplay(); return; }
+    drawSpikes(replay.frames, replay.shownT, 40, dpr);
+    const info = $("replay-info");
+    info.querySelector(".t").textContent = `+${Math.round(replay.shownT - replay.start)} ms`;
+    let cur = null; for (const f of replay.frames) if (f.t <= replay.shownT) cur = f;
+    const chips = info.querySelector(".chips");
+    const want = cur ? cur.held.join(",") : "";
+    if (chips.dataset.held !== want) {
+      chips.dataset.held = want; chips.innerHTML = "";
+      for (const b of (cur ? cur.held : [])) { const c = document.createElement("span"); c.className = "chip"; c.style.background = COLOURS[b]; c.textContent = NAMES[b] + " held"; chips.appendChild(c); }
+    }
+    if (cur && cur.outputs) setLabels(cur.outputs);
+    return;
+  }
+  // live: show sim time a little behind the newest tick so each tick's chunks play out over 50 ms
+  if (latestT >= 0) {
+    shownT += dtMs;
+    const target = latestT - TICK_MS;
+    if (shownT > target + TICK_MS) shownT = target + TICK_MS;     // don't run ahead of data
+    if (shownT < target - 3 * TICK_MS) shownT = target;            // fell behind: jump
+    drawSpikes(ticks, shownT, 250, dpr);
+  }
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(100, now - lastFrame); lastFrame = now;
+  drawArena(); drawBrain(dt);
+}
+requestAnimationFrame(frame);
+
+// ------------------------------------------------------------------ socket
+const sock = connect({
+  onOpen() { $("conn").textContent = "connected"; },
+  onClose() { $("conn").textContent = "reconnecting…"; },
   onMessage(m) {
     if (m.type === "fainted") {
-      faintEl.classList.add("show"); clearTimeout(faintTimer);
-      faintTimer = setTimeout(() => faintEl.classList.remove("show"), m.seconds * 1000);
+      $("faint").classList.add("show"); clearTimeout(faintTimer);
+      faintTimer = setTimeout(() => $("faint").classList.remove("show"), m.seconds * 1000);
       trail = [];
     }
     if (m.type !== "state") return;
     state = m;
+    const f = ticks.find((x) => x.tick === m.tick); if (f) { f.held = m.held; f.outputs = m.outputs; }
     trail.push({ x: m.fly.x, y: m.fly.y }); if (trail.length > 120) trail.shift();
-    const o = m.outputs;
-    setLabel("turnleft", o.turn.left, FULL.turnleft);
-    setLabel("turnright", o.turn.right, FULL.turnright);
-    setLabel("panic", (o.escape.left + o.escape.right) / 2, FULL.panic);
-    setLabel("hungry", (o.feed.left + o.feed.right) / 2, FULL.hungry);
-    setLabel("walk", (o.walk.left + o.walk.right) / 2, FULL.walk);
+    if (!replay) setLabels(m.outputs);
     const held = new Set(m.held);
-    for (const b of Object.keys(COLOURS)) document.getElementById("chip-" + b).classList.toggle("on", held.has(b));
-    connEl.textContent = `${m.players.length} phone${m.players.length === 1 ? "" : "s"} · ${m.active} neurons active · sim ${m.perf.brain_ms} ms/tick`;
+    for (const b of Object.keys(COLOURS)) $("chip-" + b).classList.toggle("on", held.has(b));
+    $("conn").textContent = `${m.players.length} phone${m.players.length === 1 ? "" : "s"} · ${m.active} neurons active · sim ${m.perf.brain_ms} ms/tick`;
   },
+  onBinary: onSpikes,
 });
 </script>
 </body>
