@@ -353,7 +353,10 @@ class Game:
                     self.fly.feeding = self.fly.jumped = False
                     self.faints += 1
                     self.fainted_until = now + FAINT_S
-                    print(f"WATCHDOG: {active} active neurons in one tick -> brain reset, fly fainted", flush=True)
+                    d = self.world.on_drop(self.fly)
+                    print(f"WATCHDOG: {active} active neurons in one tick -> brain reset, fly fainted | inputs {rates} | "
+                          f"senses {self.senses} | held {sorted(held)} | on drop {d} | spider {self.world.spider_state} | "
+                          f"phase {self.phase} t={self.tick * TICK_MS / 1000:.1f}s", flush=True)
                     hub.send_from_thread({"type": "fainted", "active": active, "seconds": FAINT_S})
                 else:
                     if self.world.fly_dead <= 0 and self.phase != "countdown":
