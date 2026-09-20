@@ -319,12 +319,14 @@ function drawArena() {
   // the spider: its threat radius is always drawn; it fills in when the spider is charging (= looming)
   const [sx, sy] = w.spider, looming = senses.some((x) => x.startsWith("shadow"));
   ctx.save(); ctx.translate(sx, sy);
-  ctx.strokeStyle = w.spider_closing ? "rgba(239,68,68,.45)" : "rgba(239,68,68,.15)"; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
-  ctx.beginPath(); ctx.arc(0, 0, 220, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-  if (looming) { ctx.fillStyle = "rgba(239,68,68,.12)"; ctx.beginPath(); ctx.arc(0, 0, 220, 0, Math.PI * 2); ctx.fill(); }
-  ctx.strokeStyle = w.spider_rest ? "#4b5563" : "#7f1d1d"; ctx.lineWidth = 4; ctx.lineCap = "round";
-  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + 0.2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(38 * Math.cos(a), 38 * Math.sin(a)); ctx.stroke(); }
-  ctx.fillStyle = w.spider_rest ? "#374151" : "#991b1b"; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
+  const hunting = w.spider_state === "hunt", resting = w.spider_state === "rest", R = w.sight_r || 260;
+  ctx.strokeStyle = hunting ? "rgba(239,68,68,.6)" : resting ? "rgba(107,114,128,.2)" : "rgba(239,68,68,.2)"; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  if (hunting) { ctx.fillStyle = "rgba(239,68,68,.12)"; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = resting ? "#4b5563" : hunting ? "#dc2626" : "#7f1d1d"; ctx.lineWidth = 4; ctx.lineCap = "round";
+  const wig = hunting ? Math.sin(performance.now() / 40) * 0.25 : 0;
+  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + 0.2 + (k % 2 ? wig : -wig); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(38 * Math.cos(a), 38 * Math.sin(a)); ctx.stroke(); }
+  ctx.fillStyle = resting ? "#374151" : hunting ? "#dc2626" : "#991b1b"; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#fecaca"; ctx.beginPath(); ctx.arc(-7, 6, 4, 0, Math.PI * 2); ctx.arc(7, 6, 4, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
   ctx.translate(f.x, f.y); ctx.rotate(f.heading);
@@ -424,6 +426,7 @@ const sock = connect({
     for (const e of m.world.events) if (e !== lastEvent.name || m.tick - lastEvent.tick > 20) {
       lastEvent = { name: e, tick: m.tick };
       const fl = $("flash"); fl.textContent = e === "EAT" ? "NOM!" : e === "CAUGHT" ? "GOT YOU!" : e; fl.style.color = e === "EAT" ? "#8ac926" : "#ef4444";
+      if (e === "SPIDER!") fl.style.fontSize = "40px"; else fl.style.fontSize = "";
       fl.classList.add("show"); setTimeout(() => fl.classList.remove("show"), e === "CAUGHT" ? 1500 : 700);
     }
     $("conn").textContent = `${m.players.length} phone${m.players.length === 1 ? "" : "s"} · ${m.active} neurons active · sim ${m.perf.brain_ms} ms/tick`;

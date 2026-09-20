@@ -71,7 +71,8 @@ function drawMini() {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#11161f"; ctx.fillRect(0, 0, mini.width, mini.height);
   ctx.setTransform(s, 0, 0, -s, 0, mini.height);
   for (const [x, y] of state.world.drops) { ctx.fillStyle = COLOURS.sugar; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill(); }
-  const [sx, sy] = state.world.spider; ctx.fillStyle = "#991b1b"; ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2); ctx.fill();
+  const [sx, sy] = state.world.spider; ctx.strokeStyle = "rgba(239,68,68,.3)"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(sx, sy, state.world.sight_r || 260, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = state.world.spider_state === "hunt" ? "#dc2626" : "#991b1b"; ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2); ctx.fill();
   const f = state.fly; ctx.translate(f.x, f.y); ctx.rotate(f.heading);
   ctx.fillStyle = "#e8ecf1"; ctx.beginPath(); ctx.moveTo(40, 0); ctx.lineTo(-30, 26); ctx.lineTo(-30, -26); ctx.closePath(); ctx.fill();
   const bar = document.getElementById("coolbar"); if (bar) bar.style.width = Math.min(100, 100 - (coolUntil - Date.now()) / 20) + "%";

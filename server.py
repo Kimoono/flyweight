@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT / "sim"))
 from brain import Brain  # noqa: E402  (sim/ is a plain directory, not a package)
 from body import Fly     # noqa: E402
 from senses import encode  # noqa: E402
-from world import World, W as WORLD_W, H as WORLD_H  # noqa: E402
+from world import World, W as WORLD_W, H as WORLD_H, SIGHT_R  # noqa: E402
 
 # ----------------------------------------------------------------------------- config
 PORT = 8000
@@ -318,7 +318,7 @@ class Game:
                 "rates": {f"{g}_{s}": round(hz) for g, sides in (rates.items() if not fainted else []) for s, hz in sides.items()},
                 "world": {"drops": [[round(x), round(y)] for x, y in self.world.drops],
                           "spider": [round(self.world.spider[0]), round(self.world.spider[1])],
-                          "spider_rest": self.world.spider_rest > 0, "spider_closing": self.world.spider_closing,
+                          "spider_state": self.world.spider_state, "spider_closing": self.world.spider_closing, "sight_r": SIGHT_R,
                           "fly_dead": self.world.fly_dead > 0,
                           "eating": round(self.world.eating / 1.5, 2),
                           "score": self.world.score, "caught": self.world.caught,

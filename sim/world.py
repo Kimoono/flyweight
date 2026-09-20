@@ -7,11 +7,16 @@ W, H = 1600.0, 900.0
 DROP_R = 28.0          # px: standing on a drop
 EAT_S = 1.5            # s of feeding to finish a drop
 N_DROPS = 5
-SPIDER_SPEED = 32.0    # px/s: slower than a walking fly (40 px/s), so only a feeding fly gets caught
+# The spider is an ambush predator. It waits (or wanders slowly toward a target), charges when
+# the fly comes inside its sight, gives up when the fly gets away, and rests after a catch.
+SIGHT_R = 260.0        # px: the fly inside this = the spider charges
+CHARGE_SPEED = 70.0    # px/s: faster than a walking fly (40 px/s); only a jump gets away
+WANDER_SPEED = 15.0    # px/s while waiting
+GIVE_UP_R = 420.0      # px: fly this far away while hunting = the spider gives up
+HUNT_MAX_S = 6.0       # s: a charge never lasts longer than this
+REST_S = 3.0           # s: after giving up or a catch
 CATCH_R = 30.0
-SPIDER_REST_S = 3.0    # after a catch the spider sits still (fair restart)
 FLY_DEAD_S = 1.5       # the fly lies still after a catch, then respawns
-LOOM_RANGE = 220.0     # px: the spider's threat radius (senses.py uses the same number)
 
 
 @dataclass
@@ -19,8 +24,9 @@ class World:
     rng: random.Random = field(default_factory=lambda: random.Random(0))
     drops: list = field(default_factory=list)
     spider: list = field(default_factory=lambda: [W * 0.85, H * 0.85])
-    spider_closing: bool = False
-    spider_rest: float = 0.0
+    spider_state: str = "wait"      # wait | hunt | rest
+    spider_target: list | None = None   # where it wanders to while waiting (spectator vote later)
+    spider_timer: float = 0.0       # time in the current state
     fly_dead: float = 0.0
     eating: float = 0.0
     score: int = 0
@@ -40,8 +46,24 @@ class World:
                 return d
         return None
 
+    @property
+    def spider_closing(self):
+        return self.spider_state == "hunt"
+
     def hazards(self, fly):
         return [(self.spider[0], self.spider[1], self.spider_closing)]
+
+    def set_spider_target(self, x, y):
+        self.spider_target = [min(max(x, 60), W - 60), min(max(y, 60), H - 60)]
+
+    def _move_spider_toward(self, x, y, speed, dt):
+        sx, sy = self.spider
+        d = math.hypot(x - sx, y - sy)
+        if d < 1e-6:
+            return d
+        step = min(speed * dt, d)
+        self.spider[0] += (x - sx) / d * step; self.spider[1] += (y - sy) / d * step
+        return d
 
     def update(self, fly, dt, t):
         """Call after fly.update(). Applies walls, eating, the spider, death and respawn."""
@@ -66,17 +88,24 @@ class World:
             if self.eating >= EAT_S:
                 self.drops.remove(d); self.drops.append(self.spawn_drop())
                 self.score += 1; self.eating = 0.0; self.events.append((t, "EAT"))
-        # spider: chases the fly; it looms only while it is moving toward the fly
-        sx, sy = self.spider
-        dist = math.hypot(fly.x - sx, fly.y - sy)
-        self.spider_closing = False
-        if self.spider_rest > 0:
-            self.spider_rest -= dt
-        elif dist > 1e-6:
-            step = min(SPIDER_SPEED * dt, dist)
-            self.spider[0] += (fly.x - sx) / dist * step; self.spider[1] += (fly.y - sy) / dist * step
-            self.spider_closing = True
+        # spider: ambush predator (see constants above)
+        dist = math.hypot(fly.x - self.spider[0], fly.y - self.spider[1])
+        self.spider_timer += dt
+        if self.spider_state == "wait":
+            if dist < SIGHT_R:
+                self.spider_state, self.spider_timer = "hunt", 0.0; self.events.append((t, "SPIDER!"))
+            else:
+                if self.spider_target is None or self.spider_timer > 8.0:
+                    self.spider_target = [self.rng.uniform(60, W - 60), self.rng.uniform(60, H - 60)]; self.spider_timer = 0.0
+                if self._move_spider_toward(self.spider_target[0], self.spider_target[1], WANDER_SPEED, dt) < 5:
+                    self.spider_target = None
+        elif self.spider_state == "hunt":
+            dist = self._move_spider_toward(fly.x, fly.y, CHARGE_SPEED, dt)
             if dist < CATCH_R:
                 self.caught += 1; self.events.append((t, "CAUGHT"))
                 self.fly_dead = FLY_DEAD_S; self.eating = 0.0
-                self.spider_rest = SPIDER_REST_S + FLY_DEAD_S; self.spider_closing = False
+                self.spider_state, self.spider_timer = "rest", -FLY_DEAD_S   # rests REST_S after the fly respawns
+            elif dist > GIVE_UP_R or self.spider_timer > HUNT_MAX_S:
+                self.spider_state, self.spider_timer = "rest", 0.0
+        elif self.spider_state == "rest" and self.spider_timer > REST_S:
+            self.spider_state, self.spider_timer, self.spider_target = "wait", 0.0, None

@@ -161,3 +161,9 @@ pathways are not mirror images (trap 2).
 - **Death.** A catch now freezes the fly on its back for 1.5 s, then respawns it away from the
   spider, which rests 4.5 s.
 - 120 s re-run: connected 5 drops / 2 catches / 35 jumps, blind 0 / 3 / 0.
+- **Ambush spider** (Kim: "the spider should not always see the fly"). The spider now waits or
+  wanders at 15 px/s, charges at 70 px/s when the fly is inside its 260 px sight, gives up when
+  the fly is 420 px away or after 6 s, and rests 3 s. Its sight ring is always drawn: faint
+  while waiting, red and filled while hunting. `World.set_spider_target(x, y)` is the hook for
+  the spectator vote. 120 s run: 2 encounters (1 catch, 1 escape), 7 jumps instead of 35.
+  Drops eaten per 120 s run vary 2-9 between runs; single runs are noisy.
