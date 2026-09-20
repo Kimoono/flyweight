@@ -1,7 +1,7 @@
 """Minimal 2D fly body: turns brain output rates into movement. This is the ONLY
 hand-written behaviour; everything upstream of these descending neurons is connectome.
 Tune the constants here for game feel."""
-import math
+import math, random
 from dataclasses import dataclass
 
 TURN_GAIN = 0.035      # rad/s per Hz of left-right steering difference
@@ -13,6 +13,8 @@ WALK_GAIN = 1.0        # px/s per Hz of DNp09
 ESCAPE_HZ = 60.0       # giant fiber rate that triggers a jump
 JUMP_DIST = 180.0      # px
 JUMP_COOLDOWN = 1.5    # s
+JUMP_AWAY = math.radians(70)   # takeoff angle away from the threatened side
+JUMP_SCATTER = math.radians(30)  # +- random scatter on the takeoff angle (real escapes vary)
 FEED_HZ = 30.0         # MN9 rate that counts as "proboscis out"
 TURN_TAU = 0.4         # s: FUDGE, turning inertia. The steering neurons flip several times a
                        # second when two objects pull opposite ways; the body smooths that so the
@@ -38,7 +40,14 @@ class Fly:
         self.cooldown = max(0.0, self.cooldown - dt_s)
         self.jumped = False
         if mean("escape") > ESCAPE_HZ and self.cooldown == 0:
-            # jump along current heading (already being steered away from the shadow)
+            # Takeoff direction. The brain says which side the threat is on (the escape
+            # descending neurons fire much more on the threatened side); the legs push off away
+            # from it. In a real fly that leg computation lives in the ventral nerve cord, which
+            # is not part of the simulated brain, so it is hand-written here.
+            side = (out["escape"]["left"] + out["escape_aux"]["left"]) - (out["escape"]["right"] + out["escape_aux"]["right"])
+            away = -JUMP_AWAY if side > 20 else JUMP_AWAY if side < -20 else 0.0   # threat left -> jump right
+            self.heading += away + random.uniform(-JUMP_SCATTER, JUMP_SCATTER)
+            self.turn_rate = 0.0
             self.x += JUMP_DIST * math.cos(self.heading); self.y += JUMP_DIST * math.sin(self.heading)
             self.cooldown = JUMP_COOLDOWN; self.jumped = True
         speed = 0.0 if self.feeding else BASE_SPEED + WALK_GAIN * mean("walk")

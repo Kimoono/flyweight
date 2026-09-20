@@ -167,3 +167,9 @@ pathways are not mirror images (trap 2).
   while waiting, red and filled while hunting. `World.set_spider_target(x, y)` is the hook for
   the spectator vote. 120 s run: 2 encounters (1 catch, 1 escape), 7 jumps instead of 35.
   Drops eaten per 120 s run vary 2-9 between runs; single runs are noisy.
+- **Jump direction** (Kim: the fly jumped straight into the spider, endless "GOT YOU"). The
+  brain lateralises the threat (shadow left: DNp01 172/108, DNp02/04/11 170/0) but the takeoff
+  direction is computed in the legs/ventral nerve cord, which the simulated brain does not
+  include, so `body.py` now jumps ~70 deg away from the side whose escape neurons fire more,
+  with +-30 deg scatter. Ambush test, spider waiting on the path to a drop, 12 seeds:
+  old rule 12/12 caught, new rule 0/12 caught (headings after the jump 47-98 deg off the path).
