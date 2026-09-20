@@ -173,3 +173,36 @@ pathways are not mirror images (trap 2).
   include, so `body.py` now jumps ~70 deg away from the side whose escape neurons fire more,
   with +-30 deg scatter. Ambush test, spider waiting on the path to a drop, 12 seeds:
   old rule 12/12 caught, new rule 0/12 caught (headings after the jump 47-98 deg off the path).
+
+## MaleCNS drop-in check (20 Sep 2026): a brain WITH a ventral nerve cord
+Kim asked whether a whole-nervous-system model exists. It does: Janelia FlyEM MaleCNS v1.0
+(brain + VNC of one male, 165,122 traced neurons, released June 2026, **CC-BY**) and the
+FlyWire BANC (female, 188k neurons, Nov 2025). `sim/build_malecns.py` downloads the MaleCNS
+flat tables (no login), builds a cache in our format (ACh +, GABA/Glu -, amines dropped,
+>= 5 synapses: 6.06 M connections) and runs our stimuli through the **unchanged** `Brain`.
+
+| Stimulus, 400 ms | MaleCNS result | FlyWire v783 (this game) |
+|---|---|---|
+| eye_target LEFT | DNa02 **142/0** | 138/0 |
+| eye_target RIGHT | DNa02 **0/135** (symmetric!) | 0/62 (lopsided) |
+| shadow LEFT | DNp01 288/100, DNp02/04/11 249/0, **TTMn jump muscle 65/15** | DNp01 172/108, no cord |
+| motion LEFT | DNp09 142/0 | 85/0 |
+| labellar taste (modality unknown) 40-80 Hz | MN9 0 for 5 s | sugar -> MN9 65/90 |
+| pharyngeal taste 40 Hz | MN9 100/0 after ~5 s, together with a 6,900-neuron burst | - |
+
+So: the simulator is drop-in compatible, the steering / escape / walking reflexes come out the
+same, this male brain turns equally well to both sides, and the cord relays the giant fibre to
+the jump muscle. What it does NOT give us:
+- **No takeoff direction.** Leg motor neurons fire symmetrically after a one-sided shadow
+  (first 300 ms: 1,033 vs 1,120 spikes, 97 vs 104 neurons active). The jump direction still
+  has to be hand-written in body.py, or needs a body physics model (NeuroMechFly).
+- **No sugar/bitter.** MaleCNS does not annotate taste modality; the labellar taste proxy never
+  drives MN9 (FLYCNS, a public MaleCNS spiking model, reports the same difficulty). HUNGRY
+  would need a wiring-based proxy.
+- **Too slow for the loop as is:** 46-48 ms of brain per 50 ms tick for one sense, 55 ms with
+  all senses (FlyWire: 32-43). Needs dt = 1 ms or the Metal port to hold 20 ticks/s.
+- **Different activity levels:** 1,200-3,000 neurons active per tick for one sense (FlyWire
+  400-700), 5,000 with all senses; the 3,000 watchdog threshold and the seizure traps would
+  have to be re-measured (pharyngeal taste showed a burst at 5 s).
+Verdict: keep FlyWire for the workshop. MaleCNS is a documented, licence-friendly upgrade
+path and a good debrief line ("the legs are in this one, and it still needs a body").

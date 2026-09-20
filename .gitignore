@@ -2,3 +2,5 @@ data/upstream/
 data/cache_783.npz
 __pycache__/
 .venv/
+data/cache_malecns.npz
+data/neurons_malecns.json
