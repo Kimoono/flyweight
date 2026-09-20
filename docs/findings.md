@@ -65,3 +65,27 @@ everything at once still faints the fly - that is the watchdog's job and it is f
 Per-tick active counts in normal play stay < 2000; the runaway sits at 7,000-9,000, so the
 3,000 watchdog threshold has margin on both sides. A runaway tick also costs ~2x brain time
 (85-90 ms), so the reset matters for the tick rate too.
+
+## No resting state: the background-drive experiment (20 Sep 2026, negative result)
+Question: can a low Poisson "spontaneous activity" drive on every neuron outside the olfactory
+runaway set give the fly idle behaviour, so it does not just walk in a straight line?
+Method: ignite the runaway twice (sugar right 150 Hz, vinegar) and record who fires: 8,586
+neurons. Drive the other 129,734 (minus taste/smell/touch sensory neurons) with Poisson hits
+that respect the refractory period, at 0.001-3 Hz per neuron, 10-20 s each, dt 0.5 ms.
+
+| Rate per neuron | Hits per 50 ms tick | Result |
+|---|---|---|
+| 0.001 Hz | ~6 | silent: 2-11 neurons active, all outputs 0 |
+| 0.003 Hz | ~19 | silent for 8.5 s, then the olfactory set ignites (7,300 active) |
+| 0.01 Hz | ~65 | same, ignites at 8.5 s |
+| 0.03 Hz | ~195 | ignites within the first 100 ms |
+| 0.1-3 Hz, or 10% of neurons at 1-10 Hz | 650+ | ignites in the first tick |
+
+There is no middle ground: below ~20 stray spikes per tick the network does nothing (the
+occasional 20 Hz blip in DNa02 is one spike), and any spike that leaks into the olfactory set
+starts the seizure. The model has no graded inhibition to hold a resting state, so idle
+behaviour cannot come from the brain without changing the model itself. Also, drawing Poisson
+hits for 130k neurons every 0.5 ms step costs ~70 ms extra per 50 ms tick (100 vs 32 ms),
+which would break the 20 ticks/s loop. Conclusion: the fly is a reflex machine; idle
+"personality" has to come from the world (things to see) or from many players in conflict,
+not from spontaneous brain activity.
