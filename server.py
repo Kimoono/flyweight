@@ -61,17 +61,6 @@ BUTTONS = {
     "sugar":        ("sugar",      "both",  40),
     "bitter":       ("bitter",     "both",  60),
 }
-# Neuron Jenga reflex tests: 400 ms of one stimulus from a fresh brain, read one output.
-# Baseline is measured at startup on the intact brain; verdict = fraction of baseline.
-REFLEX_TESTS = [
-    ("turnleft",  "TURN LEFT",  {"eye_target": {"left": 150}},              ("turn", "left")),
-    ("turnright", "TURN RIGHT", {"eye_target": {"right": 150}},             ("turn", "right")),
-    ("panic",     "PANIC!",     {"shadow": {"left": 150}},                  ("escape", "mean")),
-    ("hungry",    "HUNGRY",     {"sugar": {"left": 40, "right": 40}},       ("feed", "mean")),
-    ("walk",      "WALK",       {"motion": {"left": 150, "right": 150}},    ("walk", "mean")),
-]
-REFLEX_MS = 400
-
 ROLES = {
     "left_eye":     ["left_eye"],
     "right_eye":    ["right_eye"],
@@ -171,16 +160,7 @@ class Game:
         self.faints = 0
         self.tick = 0
         self.stop = threading.Event()
-        # Neuron Jenga
-        self.blocks = {b["id"]: b for b in json.loads((ROOT / "data" / "blocks.json").read_text())["blocks"]}
-        self.cmds: queue.Queue = queue.Queue()      # host commands, applied inside the sim thread
-        self.pulls: list[dict] = []
-        self.checking = False
-        self.check: dict | None = None
-        t0 = time.time()
-        self.baseline = self.run_reflex_tests()
-        print("reflex baseline (intact brain, Hz): " + "  ".join(f"{k} {v:.0f}" for k, v in self.baseline.items())
-              + f"  ({time.time() - t0:.1f}s)", flush=True)
+        self.cmds: queue.Queue = queue.Queue()      # phone/host commands, applied inside the sim thread
 
     # ---- duel phases
     def advance_phase(self, dt):
@@ -205,38 +185,14 @@ class Game:
             if self.phase_t <= 0:
                 self.phase, self.phase_t = "lobby", 0.0
 
-    # ---- Neuron Jenga
-    def run_reflex_tests(self) -> dict:
-        res = {}
-        for key, _label, inp, (out_name, side) in REFLEX_TESTS:
-            self.brain.reset(); self.brain.set_input(inp)
-            out, _ = self.brain.step(REFLEX_MS)
-            o = out[out_name]
-            res[key] = (o["left"] + o["right"]) / 2 if side == "mean" else o[side]
-        self.brain.reset()
-        return res
-
-    def jenga_state(self) -> dict:
-        return {"type": "jenga", "pulls": self.pulls, "dead": int(self.brain.dead.sum()),
-                "checking": self.checking, "check": self.check,
-                "blocks": [{"id": b["id"], "label": b["label"], "desc": b["desc"],
-                            "n": len(b["indices"]) if "indices" in b else int(b["random"] * self.brain.n),
-                            "random": "random" in b, "pulled": any(p["id"] == b["id"] for p in self.pulls)}
-                           for b in self.blocks.values()]}
-
-    def dead_frame(self) -> bytes:
-        """Binary frame for the brain view: uint32 0xFFFFFFFF marker, then uint32 dead neuron indices."""
-        return np.uint32(0xFFFFFFFF).tobytes() + self.brain.dead_idx.astype(np.uint32).tobytes()
-
     def apply_commands(self):
-        changed = False
         while True:
             try:
-                action, block_id = self.cmds.get_nowait()
+                action, arg = self.cmds.get_nowait()
             except queue.Empty:
                 break
             if action == "drop":
-                x, y, kind, side = block_id
+                x, y, kind, side = arg
                 if not (0 <= x <= ARENA_W and 0 <= y <= ARENA_H) or self.phase == "over":
                     continue
                 if side in ("left", "right"):          # duel rules: sugar on your half, bitter on theirs
@@ -248,56 +204,24 @@ class Game:
                 self.world.events.append((self.tick * TICK_MS / 1000.0, "SPOILED!" if what == "spoiled" else ""))
                 continue
             if action == "heat":
-                if block_id == "start" and self.phase in ("lobby", "over"):
+                if arg == "start" and self.phase in ("lobby", "over"):
                     self.world.reset_round(self.fly); self.brain.reset()
                     self.phase, self.phase_t, self.winner = "countdown", COUNTDOWN_S, None
-                elif block_id == "stop":
+                elif arg == "stop":
                     self.phase, self.phase_t, self.winner = "lobby", 0.0, None
-                elif block_id == "reset_scores":
+                elif arg == "reset_scores":
                     self.leaderboard = {}
-                elif block_id == "clear_players":
+                elif arg == "clear_players":
                     self.duel = {"left": None, "right": None}
                 continue
             if action == "join_duel":
-                name, side, cid = block_id
+                name, side, cid = arg
                 for s in ("left", "right"):            # one seat per phone, one phone per seat
                     if self.duel[s] and self.duel[s]["cid"] == cid:
                         self.duel[s] = None
                 if side in self.duel:
                     self.duel[side] = {"name": name, "cid": cid}
                 continue
-            if action == "pull" and block_id in self.blocks:
-                b = self.blocks[block_id]
-                if "random" in b:
-                    alive = np.flatnonzero(~self.brain.dead)
-                    idx = self.sample_rng.choice(alive, min(len(alive), int(b["random"] * self.brain.n)), replace=False)
-                else:
-                    idx = np.asarray(b["indices"], np.int64)
-                n = self.brain.silence(idx)
-                self.pulls.append({"id": b["id"], "label": b["label"], "n": n})
-                self.check = None
-                print(f"JENGA: pulled {b['label']} ({n} neurons, {int(self.brain.dead.sum())} dead in total)", flush=True)
-                changed = True
-            elif action == "restore":
-                self.brain.restore(); self.pulls = []; self.check = None
-                print("JENGA: whole brain restored", flush=True)
-                changed = True
-            elif action == "check":
-                self.checking = True
-                hub.send_from_thread(self.jenga_state())
-                res = self.run_reflex_tests()
-                self.check = {}
-                for key, label, _inp, _o in REFLEX_TESTS:
-                    base = self.baseline[key]
-                    ratio = res[key] / base if base > 5 else None
-                    verdict = "n/a" if ratio is None else "OK" if ratio >= 0.5 else "WEAK" if ratio >= 0.2 else "BROKEN"
-                    self.check[key] = {"label": label, "hz": round(res[key]), "base": round(base), "verdict": verdict}
-                self.checking = False
-                print("JENGA check: " + "  ".join(f"{c['label']} {c['verdict']} ({c['hz']}/{c['base']} Hz)" for c in self.check.values()), flush=True)
-                changed = True
-        if changed:
-            hub.send_from_thread(self.dead_frame())
-            hub.send_from_thread(self.jenga_state())
 
     def step_tick(self):
         """brain.step(TICK_MS) in CHUNK_MS pieces so the brain view can show spike order inside a
@@ -472,7 +396,6 @@ async def ws_endpoint(ws: WebSocket):
     hub.clients[cid] = ws
     last_drop = {"sugar": -1e9, "bitter": -1e9}
     try:
-        await ws.send_text(json.dumps(game.jenga_state()))
         while True:
             msg = json.loads(await ws.receive_text())
             t = msg.get("type")
@@ -490,12 +413,8 @@ async def ws_endpoint(ws: WebSocket):
                 inputs.release(cid, msg.get("button"))
             elif t == "release_all":
                 inputs.release(cid)
-            elif t == "jenga":
-                game.cmds.put((msg.get("action"), msg.get("block")))
             elif t == "subscribe":
                 (hub.spikes.add if msg.get("spikes") else hub.spikes.discard)(cid)
-                if msg.get("spikes"):
-                    await ws.send_bytes(game.dead_frame())
             elif t == "drop":
                 kind = "bitter" if msg.get("kind") == "bitter" else "sugar"
                 now = time.monotonic()
@@ -551,7 +470,7 @@ def print_urls():
     print("\n" + "=" * 60)
     print(f"  BEAMER   {url}/")
     print(f"  PHONES   {url}/play")
-    print(f"  HOST     {url}/host   (Neuron Jenga)")
+    print(f"  HOST     {url}/host   (heats)")
     if len(ips) > 1:
         print("  other addresses: " + ", ".join(f"http://{ip}:{PORT}" for ip in ips[1:]))
     print("=" * 60)

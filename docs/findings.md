@@ -91,8 +91,10 @@ which would break the 20 ticks/s loop. Conclusion: the fly is a reflex machine; 
 not from spontaneous brain activity.
 
 ## Neuron Jenga (20 Sep 2026): what breaks when you pull a block
-`Brain.silence(indices)` kills neurons (they never fire, their output synapses are zeroed);
-`Brain.restore()` undoes it. Blocks are defined in `sim/build_blocks.py` from the annotation
+Removed from the game on 22 Sep 2026; the code (`Brain.silence()/restore()`,
+`sim/build_blocks.py`, the /host panel) is in git history up to commit 3135234. The results
+below still describe the brain. `Brain.silence(indices)` killed neurons (they never fire, their output synapses are zeroed);
+`Brain.restore()` undid it. Blocks were defined in `sim/build_blocks.py` from the annotation
 classes. Reflex test = 400 ms of one stimulus from a fresh brain: eye L/R 150 Hz -> DNa02
 L/R, shadow L 150 Hz -> mean DNp01, sugar 40 Hz -> mean MN9, motion 150 Hz -> mean DNp09.
 Intact baseline: 140 / 88 / 136 / 60 / 69 Hz. Verdict OK >= 50% of baseline, WEAK >= 20%,

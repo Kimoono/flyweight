@@ -9,30 +9,18 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; padding: 16px; }
   h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 1px; }
-  p.hint { color: var(--dim); margin: 0 0 16px; font-size: 14px; }
   .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
   button { border: 0; border-radius: 12px; padding: 12px 16px; font-size: 15px; font-weight: 700; cursor: pointer; color: #000; }
-  .check { background: #fbbf24; } .restore { background: #ef4444; color: #fff; }
   .status { color: var(--dim); font-size: 14px; margin-left: auto; }
-  .blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
-  .block { background: var(--panel); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
-  .block b { font-size: 16px; } .block small { color: var(--dim); font-size: 13px; line-height: 1.35; }
-  .block .n { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 12px; }
-  .block button { background: #3b82f6; color: #fff; align-self: flex-start; padding: 8px 14px; font-size: 14px; }
-  .block.pulled { outline: 2px solid #ef4444; } .block.pulled button { background: #374151; color: #9aa3ad; }
-  .block.random button { background: #a855f7; }
-  .results { background: var(--panel); border-radius: 14px; padding: 12px 14px; margin-bottom: 16px; display: none; }
-  .results.show { display: block; }
-  .results table { border-collapse: collapse; width: 100%; } .results td { padding: 6px 8px; font-size: 15px; }
-  .v-OK { color: #22c55e; font-weight: 800; } .v-WEAK { color: #fbbf24; font-weight: 800; } .v-BROKEN { color: #ef4444; font-weight: 800; }
+  .results { background: var(--panel); border-radius: 14px; padding: 12px 14px; margin-bottom: 16px; }
   .log { color: var(--dim); font-size: 13px; margin-top: 6px; }
 </style>
 </head>
 <body>
-<h1>HOST</h1>
-<div class="results show" id="heat">
+<h1>HOST <small class="status" id="status" style="font-weight:400">connecting…</small></h1>
+<div class="results" id="heat">
   <div class="bar" style="margin:0 0 8px">
-    <button class="check" id="start" style="background:#22c55e">START HEAT (90 s)</button>
+    <button id="start" style="background:#22c55e">START HEAT (90 s)</button>
     <button id="stop" style="background:#374151;color:#e8ecf1">STOP</button>
     <button id="clear" style="background:#374151;color:#e8ecf1">CLEAR SEATS</button>
     <button id="resetlb" style="background:#374151;color:#e8ecf1">RESET LEADERBOARD</button>
@@ -41,23 +29,13 @@
   <div id="seats" style="font-size:16px;margin:6px 0"></div>
   <div id="lb" class="log"></div>
 </div>
-<h1 style="margin-top:18px">NEURON JENGA <small style="font-size:13px;color:#9aa3ad;font-weight:400">(optional finale)</small></h1>
-<p class="hint">Pull a block out of the brain. Let the room predict what breaks, then test the reflexes. Everything is reversible.</p>
-<div class="bar">
-  <button class="check" id="check">TEST THE REFLEXES</button>
-  <button class="restore" id="restore">RESTORE THE WHOLE BRAIN</button>
-  <span class="status" id="status">connecting…</span>
-</div>
-<div class="results" id="results"></div>
-<div class="blocks" id="blocks"></div>
 <script type="module">
 import { connect } from "/static/ws.js";
 const $ = (id) => document.getElementById(id);
-let jenga = null;
 const sock = connect({
   onOpen() { $("status").textContent = "connected"; },
   onClose() { $("status").textContent = "reconnecting…"; },
-  onMessage(m) { if (m.type === "jenga") { jenga = m; render(); } if (m.type === "state") renderHeat(m); },
+  onMessage(m) { if (m.type === "state") renderHeat(m); },
 });
 for (const [id, action] of [["start", "start"], ["stop", "stop"], ["clear", "clear_players"], ["resetlb", "reset_scores"]])
   $(id).addEventListener("click", () => { if (action === "reset_scores" && !confirm("Reset the leaderboard?")) return; sock.send({ type: "heat", action }); });
@@ -68,32 +46,6 @@ function renderHeat(m) {
   $("heat-status").textContent = h.phase === "playing" ? `playing · ${Math.ceil(h.time_left)} s left · ${sc.left} – ${sc.right}` : h.phase === "countdown" ? "countdown" : h.phase === "over" ? `over · ${h.winner}` : "lobby";
   $("seats").innerHTML = `<span style="color:#3b82f6;font-weight:800">LEFT</span> ${h.players.left || "<i style='color:#6b7280'>empty seat</i>"} &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:800">RIGHT</span> ${h.players.right || "<i style='color:#6b7280'>empty seat</i>"}`;
   $("lb").textContent = h.leaderboard.length ? "Leaderboard: " + h.leaderboard.map((r) => `${r.name} ${r.wins}W/${r.points}pts`).join(", ") : "No heats played yet. Players pick a seat on their phone, then START HEAT.";
-}
-$("check").addEventListener("click", () => sock.send({ type: "jenga", action: "check" }));
-$("restore").addEventListener("click", () => { if (confirm("Restore all neurons?")) sock.send({ type: "jenga", action: "restore" }); });
-
-function render() {
-  const j = jenga;
-  $("status").textContent = `${j.dead.toLocaleString()} neurons removed · ${j.pulls.length} pull${j.pulls.length === 1 ? "" : "s"}` + (j.checking ? " · testing…" : "");
-  const r = $("results");
-  if (j.checking) { r.classList.add("show"); r.innerHTML = "<b>Testing the reflexes… (2 s of brain time)</b>"; }
-  else if (j.check) {
-    r.classList.add("show");
-    r.innerHTML = "<table>" + Object.values(j.check).map((c) =>
-      `<tr><td><b>${c.label}</b></td><td class="v-${c.verdict}">${c.verdict}</td><td style="color:#9aa3ad">${c.hz} Hz, intact brain ${c.base} Hz</td></tr>`).join("") + "</table>" +
-      (j.pulls.length ? `<div class="log">Removed so far: ${j.pulls.map((p) => `${p.label} (${p.n.toLocaleString()})`).join(", ")}</div>` : "");
-  } else r.classList.remove("show");
-  const box = $("blocks"); box.innerHTML = "";
-  for (const b of j.blocks) {
-    const el = document.createElement("div");
-    el.className = "block" + (b.pulled ? " pulled" : "") + (b.random ? " random" : "");
-    el.innerHTML = `<b>${b.label}</b><small>${b.desc}</small><span class="n">${b.n.toLocaleString()} neurons</span>`;
-    const btn = document.createElement("button");
-    btn.textContent = b.pulled && !b.random ? "PULLED" : "PULL";
-    btn.disabled = b.pulled && !b.random;
-    btn.addEventListener("click", () => sock.send({ type: "jenga", action: "pull", block: b.id }));
-    el.appendChild(btn); box.appendChild(el);
-  }
 }
 </script>
 </body>

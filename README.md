@@ -12,17 +12,16 @@ pip install -r requirements.txt
 ./fetch_data.sh                 # connectome + annotations, ~225 MB
 python sim/build_neurons.py     # regenerates data/neurons.json (already included)
 python sim/build_positions.py   # regenerates data/positions.bin for the brain view (already included)
-python sim/build_blocks.py      # regenerates data/blocks.json for Neuron Jenga (already included)
 python sim/brain.py 0.5         # smoke test + speed benchmark
 python sim/demo_autopilot.py    # brain steers a fly to a target, headless
-python server.py                # the game: beamer on /, phones on /play (QR in terminal), Neuron Jenga on /host
+python server.py                # the game: beamer on /, phones on /play (QR in terminal), heats on /host
 ```
 
 What exists today: the simulator (`sim/brain.py`), a tiny body model (`sim/body.py`),
 the neuron lists (`data/neurons.json`), the test results (`docs/findings.md`) and the game:
 `server.py` + `web/`. Two players lure one fly ("Lure the fly": sugar on your half, bitter on
 theirs, a spider with a lair, 90 s heats, leaderboard), the beamer shows the arena, the live
-brain view with slow-motion replay, and `/host` runs heats (and Neuron Jenga as a finale).
+brain view with slow-motion replay, and `/host` runs heats.
 Still to do: balance, sound, a dress rehearsal on real phones — see `CLAUDE.md`.
 
 ## Licences
