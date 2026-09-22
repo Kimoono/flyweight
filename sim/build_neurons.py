@@ -25,11 +25,18 @@ SENSES = {  # name: (mask, plain-language label, status)
 OUTPUTS = {
     "turn":     (ct == "DNa02", "Steering: fly turns toward the side that fires more (DNa02)"),
     "turn_aux": (ct == "DNa01", "Steering, second channel (DNa01)"),
-    "walk":     (ct == "DNp09", "Forward walking / pursuit drive (DNp09)"),
+    # DNg100 is the only cell type known to act as a descending command neuron for walking, and
+    # VNC connectome simulations (Cell, Sep 2026) found it the top driver of rhythmic leg motor
+    # activity. body.py takes the fly's walking speed from it.
+    "walk":     (ct == "DNg100", "Walking command neuron DNg100"),
+    "walk_aux": (ct == "DNp09", "Forward / pursuit drive (DNp09)"),
     "escape":   (ct == "DNp01", "Giant fiber: escape jump (DNp01)"),
     "escape_aux": (ct.isin(["DNp02", "DNp04", "DNp11"]), "Other looming-escape descending neurons"),
     "backward": (ct == "MDN", "Moonwalker: walk backwards (MDN)"),
     "feed":     (ct == "CB0701", "Proboscis extension motor neuron MN9 (annotated CB0701)"),
+    # The whole output cable, not a hand-picked cell type: body.py takes the fly's walking speed
+    # from the mean rate of this population, so "how fast" is the brain's decision and not ours.
+    "descending": (a.super_class == "descending", "Every command leaving the brain (descending neurons)"),
 }
 
 def pack(mask):

@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "sim"))
 from brain import Brain  # noqa: E402  (sim/ is a plain directory, not a package)
 from body import Fly     # noqa: E402
-from senses import encode  # noqa: E402
+from senses import Eyes  # noqa: E402
 from world import World, W as WORLD_W, H as WORLD_H, SIGHT_R  # noqa: E402
 HEAT_S = 90.0                 # one duel
 COUNTDOWN_S = 3.0
@@ -145,6 +145,7 @@ class Game:
         self.fly = Fly(x=ARENA_W / 2, y=ARENA_H / 2, heading=0.0)
         self.world = World()
         self.senses: list[str] = []
+        self.eyes = Eyes()      # what the fly is looking at (sim/senses.py)
         # duel / heat
         self.phase = "lobby"            # lobby | countdown | playing | over
         self.phase_t = 0.0              # seconds left in the phase (countdown / playing / over)
@@ -262,8 +263,8 @@ class Game:
             else:
                 # what the world does to the senses (sim/senses.py) + what the phones add (direct lines)
                 d = self.world.on_drop(self.fly)
-                rates, self.senses = encode(self.fly, self.world.drop_xy(), self.world.hazards(self.fly),
-                                            bool(d and d["sugar"]), bool(d and d["bitter"]))
+                rates, self.senses = self.eyes.encode(self.fly, self.world.drop_xy(), self.world.hazards(self.fly),
+                                                     bool(d and d["sugar"]), bool(d and d["bitter"]), TICK_MS / 1000.0)
                 for group, sides in inputs.rates(held).items():
                     for side, hz in sides.items():
                         rates.setdefault(group, {})[side] = max(rates.get(group, {}).get(side, 0), hz)

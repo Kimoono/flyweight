@@ -3,7 +3,7 @@ on its own? Runs the same world twice: senses connected, and blind (no input).""
 import math, sys, time
 from brain import Brain
 from body import Fly
-from senses import encode, bearing
+from senses import Eyes, bearing
 import world as WM
 from world import World, W, H
 WM.N_DROPS = 5   # the headless demo keeps the world's own drops
@@ -12,7 +12,7 @@ TICK_MS = 50; SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
 br = Brain(dt=0.5)
 
 def run(label, connected):
-    br.reset(); fly = Fly(x=W / 2, y=H / 2, heading=0.0); world = World()
+    br.reset(); fly = Fly(x=W / 2, y=H / 2, heading=0.0); world = World(); eyes = Eyes()
     fainted_until = 0.0; jumps = feeding_ticks = 0; faints = 0; t0 = time.time()
     print(f"\n=== {label} ({SECONDS:.0f} s simulated)")
     for tick in range(int(SECONDS * 1000 / TICK_MS)):
@@ -21,7 +21,7 @@ def run(label, connected):
             out = {n: {"left": 0.0, "right": 0.0} for n in br.output_names}; active = 0; seen = ["fainted"]
         else:
             d = world.on_drop(fly)
-            rates, seen = encode(fly, world.drop_xy(), world.hazards(fly), bool(d and d["sugar"]), bool(d and d["bitter"])) if connected else ({}, [])
+            rates, seen = eyes.encode(fly, world.drop_xy(), world.hazards(fly), bool(d and d["sugar"]), bool(d and d["bitter"]), TICK_MS / 1000) if connected else ({}, [])
             br.set_input(rates); out, active = br.step(TICK_MS)
             if active > 3000:
                 br.reset(); fainted_until = t + 2.0; faints += 1; world.events.append((t, "FAINT"))

@@ -126,6 +126,85 @@ nothing for reflexes; feeding needs both halves (the tongue's motor neuron is wi
 sides); random damage is tolerated up to ~15% and collapses around 20%, so a Jenga round of
 "random 5%" pulls lasts 3-4 turns. A check takes ~1.6 s of wall time and pauses the game.
 
+## Does the fly ever walk? (22 Sep 2026)
+Kim: "the graphic shows WALK, but is this ever triggered?" No. The beamer's WALK label read
+DNp09, and nothing the game feeds the brain drives it. Mean Hz over 400 ms from a fresh brain:
+
+| stimulus | turn | turn_aux | DNp09 | escape | escape_aux | backward (MDN) | feed | **DNg100** |
+|---|---|---|---|---|---|---|---|---|
+| eye left 150 | 69 | 14 | **0** | 0 | 0 | 0 | 0 | **39** |
+| eye both 150 | 52 | 14 | **0** | 0 | 0 | 0 | 21 | 62 |
+| shadow left 150 | 2 | 22 | 8 | 138 | 85 | 3 | 0 | 26 |
+| shadow both 150 | 0 | 0 | 0 | 180 | 152 | 9 | 0 | - |
+| sugar both 40 | 0 | 1 | 0 | 0 | 0 | 0 | 55 | **0** |
+| bitter both 60 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| motion both 150 | 1 | 41 | 70 | 1 | 19 | 8 | 0 | 88 |
+| sound both 150 | 0 | 0 | 0 | 35 | 6 | 0 | 0 | - |
+| antenna touch 150 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+DNp09 needs the `motion` sense (LC9), which `senses.py` never drove. Wiring it up (movement
+slipping across the eye) is runaway-safe - 5 seeds x 10 s at 100 Hz both sides, 0/5, worst tick
+916 active; with eyes 150 + sugar 40 on top, 0/5, worst 1,613 - but it is a minor input: counting
+only things that move by themselves, it fires in 5-8% of arena ticks and DNp09 averages 0.1 Hz.
+Counting self-motion instead put a loop in the game (movement -> WALK -> faster, turnier fly ->
+more movement): 93% of ticks, fly at 110 px/s, past the spider's 70 px/s charge, 0 drops eaten in
+40 s vs 3 before. Discounting self-motion (real flies do) removed it.
+
+**The useful find is DNg100**, the only cell type known to act as a descending command neuron for
+walking, and the top driver of rhythmic leg motor activity in VNC connectome simulations (Cell,
+3 Sep 2026, pmc.ncbi.nlm.nih.gov/articles/PMC13142387). FlyWire has 2 of them, and they answer
+to the game's own senses: a drop in view 39 Hz, a moving spider 54, looming 26, sugar 0, bitter 0.
+So `walk` now means DNg100 and the old DNp09 is `walk_aux`.
+
+## Brain-driven movement (22 Sep 2026)
+Kim: "most of its movement is programmed. I want the brain to control it." `BASE_SPEED = 40` px/s
+of unconditional amble is gone; forward speed is now `WALK_GAIN` (1.0) px/s per Hz of DNg100,
+smoothed over 0.25 s and capped at 70 px/s (the spider's charge speed - at 110 px/s the chase
+stopped being a chase). No command from the brain, no movement.
+
+That exposed a conflict with the circling fix. Two measurements: the eye drive went silent when
+the drop was dead ahead (the lateral dead zone), and DNg100 has a knee at about 60 Hz of eye input
+(40 Hz -> 0, 60 -> 10, 150 -> 39) while the graded drive ran at 37-80 Hz. The fly could only walk
+while turning, and stopped when it lined up. Driving both eyes when centred does not work either:
+equal input gives turn 95/5 (trap 2), a hard left veer. So the eye encoding lost its grading and
+its dead zone - one target, full rate on its side, always. 60 s in the arena, 4 drops, spider live:
+
+| eye encoding | DNg100 | firing | speed | motionless | turning | eaten |
+|---|---|---|---|---|---|---|
+| graded + dead zone | 2-3 Hz | 7-9% of ticks | 2-3 px/s | 85-89% | 2-3 circles | 0 |
+| **full rate, no dead zone** | 36-40 Hz | 93-94% | 34-36 px/s | 1-2% | 17 circles | 3 |
+
+Steering now overshoots, so the fly weaves toward a drop instead of gliding in: 17 full circles of
+accumulated heading per 60 s, against 2-3 with the dead zone. The weave is the brain's own
+indecision and it still arrives (3 drops per 60 s, against 4-5 for the old programmed amble; single
+runs, noisy). If the weave looks bad on the beamer, damp it in body.py (`TURN_TAU` up, `TURN_GAIN`
+down) rather than by quietening the eye, which is what broke walking in the first place.
+
+Still hand-written, and unavoidably: px/s per Hz, rad/s per Hz, the 70 deg takeoff angle (the brain
+gives the side, we give the angle), the jump distance and thresholds, and the leg rhythm itself -
+walking gaits live in the ventral nerve cord, which FlyWire does not contain. The VNC paper above
+found the rhythm comes from three interneurons, and that driving DNg100 in a cord simulation still
+does not produce a tripod gait without proprioception and biomechanics.
+
+## The compass does not hold (22 Sep 2026): no working memory either
+Kim asked whether the brain can remember anything. Two tests. (1) Switch a stimulus off: activity
+is at a tenth one 50 ms window later and at exactly zero in the next one, for eye, shadow and
+sugar input alike - no after-image, no persistence anywhere in 138,639 neurons. (2) The head-
+direction ring attractor, the fly's compass and the one memory that needs no plasticity: all 47
+EPG neurons are in the model and their positions form a flat ring (PCA spread 76,695 / 54,529 /
+5,200). Planting a bump in one sector - 45 and 90 deg sectors, 150/250/400 Hz, 300 ms and 1,000 ms
+- never survives the stimulus: EPG spikes go from ~290 per 50 ms window to 0 in the next window,
+every time. The bump also never recruits a neighbour while it is driven (exactly the 23 stimulated
+cells fire, no more), so the ring is not behaving like a ring at all.
+
+Why this is interesting rather than embarrassing: the connectome gives the wiring, including 6.03 M
+inhibitory of 15.09 M connections, but this model sets every synapse to one global constant times
+its contact count. A ring attractor is a balance of excitation against inhibition, and that balance
+cannot survive a single brain-wide guess. Good debrief line: we have the complete wiring diagram of
+a brain and it still is not enough - no learning (no plasticity), no memory (no persistence), and
+the compass will not hold a heading. Consistent with the Jenga result that removing the 5,177
+Kenyon cells of the memory centre breaks no reflex.
+
 ## The world drives the senses (20 Sep 2026): the fly behaves on its own
 `sim/senses.py` turns the arena into input rates (a drop in view excites the eye on its side,
 an approaching spider within 220 px looms on its side, standing on a drop = sugar 40 Hz);
@@ -145,6 +224,34 @@ mattered: vision range 700 px and 5 drops (with 450 px / 3 drops the fly often s
 and walked straight for 10+ s), and eating progress must not reset when the MN9 rate dips
 for a tick. Dead ahead (|bearing| < 0.15 rad) excites neither eye because the two eye
 pathways are not mirror images (trap 2).
+
+## Circling (22 Sep 2026): drops around the fly and it turns on the spot
+Kim, clicking around with two /play windows: "when placing drops around the fly it often
+starts circling on the spot". Reproduced headless (4 drops at 250 px in a ring, 15 s):
+
+| eye encoding | both eyes driven | steering sign flips | reaches a drop |
+|---|---|---|---|
+| all visible drops (old) | 77% of ticks | 67 | never (2 runs, 15 and 20 s) |
+| one target at a time (new) | 0% | 13-15 | after 10.7-12.1 s |
+
+Cause, both in `senses.py`: (1) the encoder drove the eye on *every* visible drop's side, so
+drops on both sides held both eyes at full rate and the steering difference flipped sign
+several times a second - this brain has no winner-take-all to settle it; (2) distance was not
+in the formula at all, only bearing, and the rate GROWS with bearing, so turning toward a drop
+weakened its own signal while the drop behind grew louder. A limit cycle.
+
+Fix (`senses.Eyes`, a FUDGE in the same category as `RIGHT_TURN_GAIN`): the fly attends to one
+drop, the nearest, kept until it is gone or another is 1.5x closer; the dead zone straight
+ahead became a fixed sideways miss distance (10 px) instead of a fixed angle; and a target is
+remembered 1.5 s after it leaves the field of view. That last part is needed: with single-target
+attention the fly commits, walks past the drop, and then cannot see it (anything behind the fly
+is outside the 150 deg FOV), so the first version walked off the screen in a straight line.
+The brain still steers; we now choose what it looks at. Through the server, ring of 4 drops:
+3 eaten in 35 s, 20.0 ticks/s held, brain 35-40 ms/tick.
+
+Not fixed, and still true: the fly meanders (about 3 full turns of accumulated heading per 15 s)
+and a single drop 300 px away takes 11-14 s to reach. Single runs are noisy: the brain is
+stochastic, and these are one run per variant.
 
 ## Playtest fixes (20 Sep 2026, after Kim watched world mode)
 - **Left-right flicker.** With drops on both sides both DNa02 neurons fire and the steering
