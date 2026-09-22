@@ -205,6 +205,56 @@ a brain and it still is not enough - no learning (no plasticity), no memory (no 
 the compass will not hold a heading. Consistent with the Jenga result that removing the 5,177
 Kenyon cells of the memory centre breaks no reflex.
 
+## Two spiders, one per half (22 Sep 2026)
+Kim's idea, and it costs nothing: `world.Spider` is a dataclass now and `World.spiders` a list,
+each with its own lair, state machine and timer, hunting independently (a catch breaks the loop so
+two cannot claim the same fly). Lairs are on the grid - vertically centred, an eighth of the width
+in from each side wall, i.e. (200, 450) and (1400, 450) - deterministic, so the halves mirror each
+other and players can learn the map. `N_SPIDERS = 1` restores the old single centre-line lair.
+Respawn moved to the middle of the arena, 600 px from either lair. Costs no measurable brain time
+(20.0 ticks/s, 33 ms/tick with both). 60 s, 4 drops, 2 seeds per row:
+
+| layout | eaten | caught | charges | inside a ring | middle third |
+|---|---|---|---|---|---|
+| 1 spider, centre line, sight 260 (before) | 4, 5 | 3, 0 | - | 59%, 35% | 56%, 59% |
+| 2 at quarter positions, sight 260 | 5, 5 | 1, 0 | - | 33%, 26% | 57%, 48% |
+| 2 on the grid, sight 260 | 5, 5 | **0, 0** | 1, 2 | 8%, 36% | 81%, 47% |
+| 2 on the grid, sight 340 | 5, 5 | 0, 1 | 3, 3 | 33%, 40% | 77%, 70% |
+| 2 on the grid, sight 420 | 5, 5 | 0, 1 | 2, 4 | 37%, 61% | 84%, 77% |
+
+Two spiders are not deadlier than one - the old single lair sat in the horizontal centre, where the
+fly lives, while grid lairs sit in ground it rarely enters. At sight 260 they are decoration (1-2
+charges a minute, no catches); 340 is where they start participating.
+
+**The bigger find is scale.** The fly spends 47-84% of its time in the middle third of the board.
+At ~39 px/s with a weaving path its net progress is 10-20 px/s, so crossing 1600 px takes over a
+minute and most of the arena is unreachable inside a 90 s heat: sugar placed deep in a half is
+nearly worthless and the outer quarters go unused. Arena size (`W, H` in world.py is the single
+source of truth - the server sends it and both pages scale to it) and weave damping (`TURN_TAU`)
+are being measured together with the sight radius. Note vision reaches 700 px, so in a 1200-wide
+arena the fly can see most of the board at once.
+
+Side effect of brain-driven speed, measured: a fly standing on bitter with **nothing in view** has
+DNg100 = 0, so it stops until the puddle expires (10 s). With a drop in view it walks off normally
+(39 Hz). A sulk, not a glue trap - kept on purpose.
+
+## Vinegar is a grenade, not a lure (22 Sep 2026)
+`smell_vinegar` (ORN_DM1, 68 neurons) is marked BROKEN in build_neurons.py. Measured properly, to
+see whether a low rate could be a long-range attractant (smell works at a distance; sugar needs
+the fly standing on the drop): there is no safe rate. 400 ms from a fresh brain, **vinegar LEFT at
+10 Hz** already puts 8,152 neurons in the seizure; 40 Hz gives 8,160, both sides at 150 Hz gives
+8,231. Held 10 s, 5 seeds per rate (the "Sustained input" protocol): 20, 40, 80 and 150 Hz all
+ignite **5/5, every one at 0.0 s** - the first tick. During the seizure `turn` reads 22-30 Hz of
+noise and DNg100 reads 0, so the fly would not even walk.
+
+Use: a one-per-heat **stink bomb** that faints the fly on purpose - instant, 100% reliable, ~1 late
+tick, and the most spectacular thing on the beamer (the whole brain flashes, the watchdog trips,
+"THE FLY FAINTED"). Two cautions: (1) the honest framing is that this is a MODEL artefact, not
+biology - real flies are attracted to vinegar, and this pathway simply has no gain control in the
+model; do not tell the room vinegar makes flies faint. (2) A fainted fly does not move but the
+world keeps running, so gassing the fly inside a spider's sight ring is a guaranteed kill; decide
+whether that is a play or an exploit before someone finds it in a heat.
+
 ## The world drives the senses (20 Sep 2026): the fly behaves on its own
 `sim/senses.py` turns the arena into input rates (a drop in view excites the eye on its side,
 an approaching spider within 220 px looms on its side, standing on a drop = sugar 40 Hz);

@@ -120,8 +120,12 @@ function drawMini() {
   ctx.fillStyle = side === "left" ? "rgba(59,130,246,.18)" : "rgba(245,158,11,.18)"; ctx.fillRect(side === "left" ? 0 : aw / 2, 0, aw / 2, ah);
   ctx.strokeStyle = "#374151"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(aw / 2, 0); ctx.lineTo(aw / 2, ah); ctx.stroke();
   for (const d of w.drops) { ctx.fillStyle = d.bitter ? COLOURS.bitter : COLOURS.sugar; ctx.beginPath(); ctx.arc(d.x, d.y, 24, 0, Math.PI * 2); ctx.fill(); }
-  const [lx, ly] = w.lair; ctx.strokeStyle = "rgba(239,68,68,.35)"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(lx, ly, w.sight_r || 260, 0, Math.PI * 2); ctx.stroke();
-  const [sx, sy] = w.spider; ctx.fillStyle = w.spider_state === "hunt" ? "#dc2626" : "#991b1b"; ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2); ctx.fill();
+  for (const sp of w.spiders || []) {      // the sight ring follows the SPIDER, not its lair: they wander
+    ctx.strokeStyle = "rgba(239,68,68,.35)"; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(sp.x, sp.y, w.sight_r || 260, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = sp.state === "hunt" ? "#dc2626" : "#991b1b";
+    ctx.beginPath(); ctx.arc(sp.x, sp.y, 34, 0, Math.PI * 2); ctx.fill();
+  }
   const f = state.fly; ctx.translate(f.x, f.y); ctx.rotate(f.heading);
   ctx.fillStyle = "#e8ecf1"; ctx.beginPath(); ctx.moveTo(40, 0); ctx.lineTo(-30, 26); ctx.lineTo(-30, -26); ctx.closePath(); ctx.fill();
   for (const k of ["sugar", "bitter"]) { const el = document.getElementById("cool-" + k); if (el) el.style.width = Math.max(0, Math.min(100, 100 - (cool[k] - Date.now()) / (k === "sugar" ? 20 : 40))) + "%"; }

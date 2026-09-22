@@ -280,7 +280,7 @@ class Game:
                     self.fainted_until = now + FAINT_S
                     d = self.world.on_drop(self.fly)
                     print(f"WATCHDOG: {active} active neurons in one tick -> brain reset, fly fainted | inputs {rates} | "
-                          f"senses {self.senses} | held {sorted(held)} | on drop {d} | spider {self.world.spider_state} | "
+                          f"senses {self.senses} | held {sorted(held)} | on drop {d} | spiders {[sp.state for sp in self.world.spiders]} | "
                           f"phase {self.phase} t={self.tick * TICK_MS / 1000:.1f}s", flush=True)
                     hub.send_from_thread({"type": "fainted", "active": active, "seconds": FAINT_S})
                 else:
@@ -304,9 +304,9 @@ class Game:
                 "senses": self.senses if not fainted else [],
                 "rates": {f"{g}_{s}": round(hz) for g, sides in (rates.items() if not fainted else []) for s, hz in sides.items()},
                 "world": {"drops": [{"x": round(d["x"]), "y": round(d["y"]), "bitter": d["bitter"], "sugar": d["sugar"]} for d in self.world.drops],
-                          "spider": [round(self.world.spider[0]), round(self.world.spider[1])],
-                          "lair": [round(self.world.spider_home[0]), round(self.world.spider_home[1])],
-                          "spider_state": self.world.spider_state, "spider_closing": self.world.spider_closing, "sight_r": SIGHT_R,
+                          "spiders": [{"x": round(sp.x), "y": round(sp.y), "state": sp.state,
+                                       "lair": [round(sp.home_x), round(sp.home_y)]} for sp in self.world.spiders],
+                          "spider_closing": self.world.spider_closing, "sight_r": SIGHT_R,
                           "fly_dead": self.world.fly_dead > 0,
                           "eating": round(self.world.eating / 1.5, 2),
                           "score": self.world.score, "caught": self.world.caught,

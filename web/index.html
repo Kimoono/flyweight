@@ -294,10 +294,11 @@ function drawArena() {
     }
   }
   const f = state.fly, held = new Set(state.held), w = state.world, senses = state.senses || [];
-  // the spider's lair
-  const [lx, ly] = w.lair;
+  // the lairs: one per half
   ctx.strokeStyle = "rgba(239,68,68,.35)"; ctx.lineWidth = 2; ctx.setLineDash([3, 6]);
-  for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI; ctx.beginPath(); ctx.moveTo(lx - 50 * Math.cos(a), ly - 50 * Math.sin(a)); ctx.lineTo(lx + 50 * Math.cos(a), ly + 50 * Math.sin(a)); ctx.stroke(); }
+  for (const { lair: [lx, ly] } of w.spiders) {
+    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI; ctx.beginPath(); ctx.moveTo(lx - 50 * Math.cos(a), ly - 50 * Math.sin(a)); ctx.lineTo(lx + 50 * Math.cos(a), ly + 50 * Math.sin(a)); ctx.stroke(); }
+  }
   ctx.setLineDash([]);
   // drops: green = sugar, yellow = bitter (spoiled drop or bitter puddle)
   for (const d of w.drops) {
@@ -316,19 +317,21 @@ function drawArena() {
       ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(dx, dy); ctx.stroke(); ctx.setLineDash([]);
     }
   }
-  // the spider: its threat radius is always drawn; it fills in when the spider is charging (= looming)
-  const [sx, sy] = w.spider, looming = senses.some((x) => x.startsWith("shadow"));
-  ctx.save(); ctx.translate(sx, sy);
-  const hunting = w.spider_state === "hunt", resting = w.spider_state === "rest", R = w.sight_r || 260;
-  ctx.strokeStyle = hunting ? "rgba(239,68,68,.6)" : resting ? "rgba(107,114,128,.2)" : "rgba(239,68,68,.2)"; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-  if (hunting) { ctx.fillStyle = "rgba(239,68,68,.12)"; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); }
-  ctx.strokeStyle = resting ? "#4b5563" : hunting ? "#dc2626" : "#7f1d1d"; ctx.lineWidth = 4; ctx.lineCap = "round";
-  const wig = hunting ? Math.sin(performance.now() / 40) * 0.25 : 0;
-  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + 0.2 + (k % 2 ? wig : -wig); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(38 * Math.cos(a), 38 * Math.sin(a)); ctx.stroke(); }
-  ctx.fillStyle = resting ? "#374151" : hunting ? "#dc2626" : "#991b1b"; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#fecaca"; ctx.beginPath(); ctx.arc(-7, 6, 4, 0, Math.PI * 2); ctx.arc(7, 6, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
+  // the spiders: each threat radius is always drawn, and fills in while that spider charges
+  const R = w.sight_r || 260;
+  for (const sp of w.spiders) {
+    ctx.save(); ctx.translate(sp.x, sp.y);
+    const hunting = sp.state === "hunt", resting = sp.state === "return";
+    ctx.strokeStyle = hunting ? "rgba(239,68,68,.6)" : resting ? "rgba(107,114,128,.2)" : "rgba(239,68,68,.2)"; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    if (hunting) { ctx.fillStyle = "rgba(239,68,68,.12)"; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); }
+    ctx.strokeStyle = resting ? "#4b5563" : hunting ? "#dc2626" : "#7f1d1d"; ctx.lineWidth = 4; ctx.lineCap = "round";
+    const wig = hunting ? Math.sin(performance.now() / 40) * 0.25 : 0;
+    for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + 0.2 + (k % 2 ? wig : -wig); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(38 * Math.cos(a), 38 * Math.sin(a)); ctx.stroke(); }
+    ctx.fillStyle = resting ? "#374151" : hunting ? "#dc2626" : "#991b1b"; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fecaca"; ctx.beginPath(); ctx.arc(-7, 6, 4, 0, Math.PI * 2); ctx.arc(7, 6, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
   ctx.translate(f.x, f.y); ctx.rotate(f.heading);
   if (w.eating > 0) { ctx.strokeStyle = COLOURS.sugar; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(0, 0, 48, -Math.PI / 2, -Math.PI / 2 + w.eating * Math.PI * 2); ctx.stroke(); }
   for (const [btn, side] of [["left_shadow", 1], ["right_shadow", -1]]) if (held.has(btn) || senses.includes(btn.replace("_", " ").replace("left shadow", "shadow left").replace("right shadow", "shadow right"))) {
