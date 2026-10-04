@@ -28,7 +28,7 @@ structure copied from nature, and it still behaves like a fly.
 ## Quick start
 
 ```bash
-git clone <this repo> && cd fly-by-committee
+git clone <this repo> flyweight && cd flyweight
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ./fetch_data.sh          # connectome + annotations into data/upstream/, ~225 MB
