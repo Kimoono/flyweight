@@ -143,10 +143,10 @@ documented in `docs/findings.md`.
   from it and fall under the same terms. Fine for a workshop; do not ship it in a product.
 - **Spider model**: based on ["Spider animated character"](https://sketchfab.com/3d-models/spider-animated-character-746f5c5173ce4f47ad0970b62ee4106e)
   by [TheGameAssets](https://sketchfab.com/TheGameAssets), licensed under
-  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Converted to glTF in Blender.
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Used as is.
 - **Fly model**: based on ["Муха"](https://sketchfab.com/3d-models/c8988274b3fc41cf9792032bf1dc657a)
   ("Fly") by [MUD](https://sketchfab.com/Jguyfioy), licensed under
-  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Converted to glTF in Blender.
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Animations added by Kim De Vylder.
 - **three.js**: MIT, vendored in `web/static/vendor/three/`.
 - **Sound effects**: in `web/static/audio/`, recorded by Kim De Vylder, except
   `Wilhelm_scream.mp3`, the well-known film stock effect, which is not covered by this
