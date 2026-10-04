@@ -141,14 +141,18 @@ documented in `docs/findings.md`.
 - **Connectome**: [FlyWire](https://flywire.ai), **non-commercial use only**. Cite Dorkenwald
   et al. 2024 and Schlegel et al. 2024. `data/neurons.json` and `data/positions.bin` are derived
   from it and fall under the same terms. Fine for a workshop; do not ship it in a product.
-- **Spider model**: "Spider animated character" by TheGameAssets on Sketchfab, CC BY.
-- **Fly model**: Kim De Vylder.
+- **Spider model**: based on ["Spider animated character"](https://sketchfab.com/3d-models/spider-animated-character-746f5c5173ce4f47ad0970b62ee4106e)
+  by [TheGameAssets](https://sketchfab.com/TheGameAssets), licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Converted to glTF in Blender.
+- **Fly model**: based on ["Муха"](https://sketchfab.com/3d-models/c8988274b3fc41cf9792032bf1dc657a)
+  ("Fly") by [MUD](https://sketchfab.com/Jguyfioy), licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Converted to glTF in Blender.
 - **three.js**: MIT, vendored in `web/static/vendor/three/`.
 - **Sound effects**: in `web/static/audio/`, recorded by Kim De Vylder, except
   `Wilhelm_scream.mp3`, the well-known film stock effect, which is not covered by this
   project's licence.
 
-The project's own code, the fly model and the sound recordings are free to use, change and
+The project's own code and the sound recordings are free to use, change and
 share for any noncommercial purpose, but not to sell: [PolyForm Noncommercial 1.0.0](LICENSE.md).
 
 Required Notice: Copyright 2026 Kim De Vylder
