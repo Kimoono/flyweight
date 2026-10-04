@@ -6,3 +6,4 @@ data/cache_malecns.npz
 data/neurons_malecns.json
 .claude/
 .DS_Store
+CLAUDE.md

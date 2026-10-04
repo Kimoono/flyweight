@@ -11,8 +11,6 @@ drawn where that neuron sits in the real brain.
 
 ![The big screen: arena on the left, the live brain on the right](docs/screenshots/duel-beamer.png)
 
-*Screenshot from an early build. The fly, spiders and drops are 3D now, and there are two spiders.*
-
 It was built for an AI workshop with about 20 people, half of them non-technical. The point of
 the evening: nobody trained this brain. There is no learning, no data and no prompt in it, only
 structure copied from nature, and it still behaves like a fly.
@@ -129,14 +127,13 @@ web/                 beamer page, phone page, host page; three.js is vendored (w
 data/neurons.json    which neurons are the senses and the outputs
 data/positions.bin   a 3D position for every neuron, for the brain view
 docs/findings.md     measurements and negative results
-CLAUDE.md            the project brief the code was written against
 ```
 
 ## Status
 
 Built for one evening. It was tested by playing it; there is no automated test suite. The
 balance numbers (drop cooldowns, spider sight, startle radius) were tuned by hand and are
-documented in `docs/findings.md` and `CLAUDE.md`.
+documented in `docs/findings.md`.
 
 ## Credits and licences
 
@@ -147,6 +144,11 @@ documented in `docs/findings.md` and `CLAUDE.md`.
 - **Spider model**: "Spider animated character" by TheGameAssets on Sketchfab, CC BY.
 - **Fly model**: Kim De Vylder.
 - **three.js**: MIT, vendored in `web/static/vendor/three/`.
-- **Sound effects**: in `web/static/audio/`, assembled by Kim De Vylder.
+- **Sound effects**: in `web/static/audio/`, recorded by Kim De Vylder, except
+  `Wilhelm_scream.mp3`, the well-known film stock effect, which is not covered by this
+  project's licence.
 
-No licence has been chosen yet for the project's own code.
+The project's own code, the fly model and the sound recordings are free to use, change and
+share for any noncommercial purpose, but not to sell: [PolyForm Noncommercial 1.0.0](LICENSE.md).
+
+Required Notice: Copyright 2026 Kim De Vylder
