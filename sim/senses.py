@@ -19,6 +19,13 @@ Rules (deliberately simple, tunable):
   the drive crosses the giant fibre's threshold, so a fast charge is a race). A fly walking
   toward a resting spider is not looming.
 - sugar: the fly is standing on a drop. Capped at SUGAR_HZ (findings: sustained input).
+- splash: a drop that has JUST landed close to the fly looms like any other object falling from
+  above, and drives the shadow sense on its side for a few ticks (full inside STARTLE_NEAR, gone
+  at STARTLE_R, 80 px). The brain does the rest: the giant fibre fires and body.py jumps. Added 24 Sep
+  2026 because feeding the fly under its nose every 2 s scored 27-29 points a minute and pinned
+  it on one half (findings, "Splash startle"); with this the fly flees a drop dumped on its head
+  and has to walk back, so you lure it from ahead or you feed the other half. A game rule, but
+  one the fly enforces, not the phone.
 """
 import math
 
@@ -39,6 +46,11 @@ LOOM_NEAR = 70.0       # px: full-rate looming from here inwards
 SHADOW_HZ = 150.0
 SUGAR_HZ = 40.0        # findings "Sustained input": >= 60 Hz held for seconds -> seizure
 BITTER_HZ = 60.0
+STARTLE_R = 80.0       # px: a drop landing closer than this startles the fly (the lure boundary; the
+                       # phone draws it around the fly). About the fly plus a drop's width. 150 looked
+                       # too big (Kim); measured 80/100/150 all kill farming, see findings.
+STARTLE_NEAR = 30.0    # px: full-rate looming from here inwards
+STARTLE_S = 0.15       # s: a landed drop looms this long (3-4 ticks; the escape needs ~50 ms)
 
 
 def bearing(fly, x, y):
@@ -106,8 +118,8 @@ class Eyes:
             now[key] = (x, y)
             d = math.hypot(x - fly.x, y - fly.y)
             b = bearing(fly, x, y)
-            if d > SEE_RANGE or abs(b) > FOV or key not in self.prev:
-                continue
+            if d < 1e-6 or d > SEE_RANGE or abs(b) > FOV or key not in self.prev:
+                continue      # d = 0: a drop landed exactly on the fly (it used to divide by zero)
             px, py = self.prev[key]
             vx, vy = (x - px) / max(dt, 1e-3), (y - py) / max(dt, 1e-3)      # the object's own velocity
             ux, uy = (x - fly.x) / d, (y - fly.y) / d
@@ -120,8 +132,9 @@ class Eyes:
         self.prev = now
         return out
 
-    def encode(self, fly, drops, hazards, on_drop, on_bitter=False, dt=0.05):
-        """drops: [(x, y)], hazards: [(x, y, closing)] with closing = True if getting nearer.
+    def encode(self, fly, drops, hazards, on_drop, on_bitter=False, dt=0.05, splashes=()):
+        """drops: [(x, y)], hazards: [(x, y, closing)] with closing = True if getting nearer,
+        splashes: [(x, y, age_s)] for drops that landed less than STARTLE_S ago.
         Returns rates {"eye_target": {"left": Hz, ...}, ...} and a plain-language list of what
         the fly senses, for the beamer."""
         rates, seen = {}, []
@@ -143,6 +156,16 @@ class Eyes:
                 if hz > 0:
                     rates.setdefault("shadow", {})[side] = max(rates.get("shadow", {}).get(side, 0), hz)
                     seen.append(f"shadow {side}")
+        for x, y, age in splashes:
+            d = math.hypot(x - fly.x, y - fly.y)
+            if age <= STARTLE_S and d < STARTLE_R:
+                side = "left" if bearing(fly, x, y) > 0 else "right"
+                hz = SHADOW_HZ * min(1.0, (STARTLE_R - d) / (STARTLE_R - STARTLE_NEAR))
+                rates.setdefault("shadow", {})[side] = max(rates.get("shadow", {}).get(side, 0), hz)
+                if f"shadow {side}" not in seen:
+                    seen.append(f"shadow {side}")      # the beamer's shadow ellipse keys on this
+                if "splash" not in seen:
+                    seen.append("splash")
         if on_drop:
             rates["sugar"] = {"left": SUGAR_HZ, "right": SUGAR_HZ}; seen.append("sugar")
         if on_bitter:

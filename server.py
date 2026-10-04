@@ -1,4 +1,4 @@
-"""Fly by Committee game server (milestone 2: thinnest playable slice).
+"""Flyweight game server (milestone 2: thinnest playable slice).
 
 One process: FastAPI + uvicorn serve the beamer page (/), the phone controller (/play)
 and a WebSocket (/ws). A background thread runs the simulation at 20 ticks/s:
@@ -6,12 +6,14 @@ gather held buttons -> brain.set_input() -> brain.step(50 ms) -> fly.update()
 -> arena rules -> broadcast state JSON to every connected page.
 
 Run:  python server.py            (prints the LAN URL + a QR code for /play)
+      FLY_HOST=<ip> / FLY_PORT=<port> override the advertised address and the port.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import math
+import os
 import queue
 import socket
 import subprocess
@@ -31,16 +33,26 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "sim"))
 from brain import Brain  # noqa: E402  (sim/ is a plain directory, not a package)
 from body import Fly     # noqa: E402
-from senses import Eyes  # noqa: E402
-from world import World, W as WORLD_W, H as WORLD_H, SIGHT_R  # noqa: E402
-HEAT_S = 90.0                 # one duel
+from senses import Eyes, STARTLE_R, STARTLE_S  # noqa: E402
+from world import World, MODES, W as WORLD_W, H as WORLD_H, SIGHT_R  # noqa: E402
+HEAT_S = 90.0                 # one heat
 COUNTDOWN_S = 3.0
 OVER_S = 8.0                  # result shown this long, then back to the lobby
 SUGAR_COOLDOWN_S = 2.0        # per phone
 BITTER_COOLDOWN_S = 4.0
+# Seats on screen: zone id (sim/world.py MODES) -> label, colour, rect in world units (x0, y0, x1, y1; y up).
+# The four-player colours avoid green (sugar), yellow (bitter) and red (spider).
+ZONE_UI = {
+    "left":  ("LEFT",         "#3b82f6", (0, 0, WORLD_W / 2, WORLD_H)),
+    "right": ("RIGHT",        "#f59e0b", (WORLD_W / 2, 0, WORLD_W, WORLD_H)),
+    "tl":    ("TOP LEFT",     "#3b82f6", (0, WORLD_H / 2, WORLD_W / 2, WORLD_H)),
+    "tr":    ("TOP RIGHT",    "#f59e0b", (WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H)),
+    "bl":    ("BOTTOM LEFT",  "#a855f7", (0, 0, WORLD_W / 2, WORLD_H / 2)),
+    "br":    ("BOTTOM RIGHT", "#14b8a6", (WORLD_W / 2, 0, WORLD_W, WORLD_H / 2)),
+}
 
 # ----------------------------------------------------------------------------- config
-PORT = 8000
+PORT = int(os.environ.get("FLY_PORT", "8000"))
 TICK_MS = 50                  # simulated ms per tick -> 20 ticks/s
 DT_MS = 0.5                   # brain integration step
 ARENA_W, ARENA_H = WORLD_W, WORLD_H   # world units (px on the beamer before scaling), from sim/world.py
@@ -146,10 +158,10 @@ class Game:
         self.world = World()
         self.senses: list[str] = []
         self.eyes = Eyes()      # what the fly is looking at (sim/senses.py)
-        # duel / heat
+        # heat: a duel (two halves) or four players (quadrants), see MODES in sim/world.py
         self.phase = "lobby"            # lobby | countdown | playing | over
         self.phase_t = 0.0              # seconds left in the phase (countdown / playing / over)
-        self.duel: dict[str, dict | None] = {"left": None, "right": None}   # side -> {"name", "cid"}
+        self.seats: dict[str, dict | None] = {z: None for z in MODES[self.world.mode]}   # zone -> {"name", "cid"}
         self.winner: str | None = None
         self.leaderboard: dict[str, dict] = {}    # name -> {"wins", "points", "heats"}
         self.sample_rng = np.random.default_rng(0)
@@ -163,7 +175,7 @@ class Game:
         self.stop = threading.Event()
         self.cmds: queue.Queue = queue.Queue()      # phone/host commands, applied inside the sim thread
 
-    # ---- duel phases
+    # ---- heat phases
     def advance_phase(self, dt):
         if self.phase == "countdown":
             self.phase_t -= dt
@@ -173,14 +185,15 @@ class Game:
             self.phase_t -= dt
             if self.phase_t <= 0:
                 sc = self.world.score
-                self.winner = "left" if sc["left"] > sc["right"] else "right" if sc["right"] > sc["left"] else "draw"
-                for side, p in self.duel.items():
+                top = [z for z, v in sc.items() if v == max(sc.values())]
+                self.winner = top[0] if len(top) == 1 else "draw"      # a shared top score is a draw
+                for side, p in self.seats.items():
                     if p:
                         row = self.leaderboard.setdefault(p["name"], {"wins": 0, "points": 0, "heats": 0})
                         row["points"] += sc[side]; row["heats"] += 1; row["wins"] += int(self.winner == side)
                 self.phase, self.phase_t = "over", OVER_S
-                print(f"HEAT over: {self.duel['left'] and self.duel['left']['name']} {sc['left']} - {sc['right']} "
-                      f"{self.duel['right'] and self.duel['right']['name']} -> {self.winner}", flush=True)
+                print("HEAT over: " + " | ".join(f"{z} {p['name'] if p else '-'} {sc[z]}" for z, p in self.seats.items())
+                      + f" -> {self.winner}", flush=True)
         elif self.phase == "over":
             self.phase_t -= dt
             if self.phase_t <= 0:
@@ -196,12 +209,12 @@ class Game:
                 x, y, kind, side = arg
                 if not (0 <= x <= ARENA_W and 0 <= y <= ARENA_H) or self.phase == "over":
                     continue
-                if side in ("left", "right"):          # duel rules: sugar on your half, bitter on theirs
-                    if kind == "sugar" and self.world.half(x) != side:
+                if side in self.seats:                 # sugar on your own ground, bitter on anyone else's
+                    if kind == "sugar" and self.world.zone(x, y) != side:
                         continue
-                    if kind == "bitter" and self.world.half(x) == side:
+                    if kind == "bitter" and self.world.zone(x, y) == side:
                         continue
-                what = self.world.add_drop(x, y, bitter=(kind == "bitter"))
+                what = self.world.add_drop(x, y, bitter=(kind == "bitter"), owner=side)
                 self.world.events.append((self.tick * TICK_MS / 1000.0, "SPOILED!" if what == "spoiled" else ""))
                 continue
             if action == "heat":
@@ -213,15 +226,19 @@ class Game:
                 elif arg == "reset_scores":
                     self.leaderboard = {}
                 elif arg == "clear_players":
-                    self.duel = {"left": None, "right": None}
+                    self.seats = {z: None for z in self.seats}
+                elif arg in MODES and arg != self.world.mode and self.phase in ("lobby", "over"):
+                    self.world.set_mode(arg); self.world.drops = []
+                    self.seats = {z: None for z in MODES[arg]}     # everyone picks a seat again
+                    self.phase, self.phase_t, self.winner = "lobby", 0.0, None
                 continue
             if action == "join_duel":
                 name, side, cid = arg
-                for s in ("left", "right"):            # one seat per phone, one phone per seat
-                    if self.duel[s] and self.duel[s]["cid"] == cid:
-                        self.duel[s] = None
-                if side in self.duel:
-                    self.duel[side] = {"name": name, "cid": cid}
+                for s in self.seats:                   # one seat per phone, one phone per seat
+                    if self.seats[s] and self.seats[s]["cid"] == cid:
+                        self.seats[s] = None
+                if side in self.seats:
+                    self.seats[side] = {"name": name, "cid": cid}
                 continue
 
     def step_tick(self):
@@ -264,7 +281,8 @@ class Game:
                 # what the world does to the senses (sim/senses.py) + what the phones add (direct lines)
                 d = self.world.on_drop(self.fly)
                 rates, self.senses = self.eyes.encode(self.fly, self.world.drop_xy(), self.world.hazards(self.fly),
-                                                     bool(d and d["sugar"]), bool(d and d["bitter"]), TICK_MS / 1000.0)
+                                                     bool(d and d["sugar"]), bool(d and d["bitter"]), TICK_MS / 1000.0,
+                                                     splashes=self.world.splashes(STARTLE_S))
                 for group, sides in inputs.rates(held).items():
                     for side, hz in sides.items():
                         rates.setdefault(group, {})[side] = max(rates.get(group, {}).get(side, 0), hz)
@@ -304,15 +322,17 @@ class Game:
                 "senses": self.senses if not fainted else [],
                 "rates": {f"{g}_{s}": round(hz) for g, sides in (rates.items() if not fainted else []) for s, hz in sides.items()},
                 "world": {"drops": [{"x": round(d["x"]), "y": round(d["y"]), "bitter": d["bitter"], "sugar": d["sugar"]} for d in self.world.drops],
-                          "spiders": [{"x": round(sp.x), "y": round(sp.y), "state": sp.state,
+                          "spiders": [{"x": round(sp.x), "y": round(sp.y), "state": sp.state, "heading": round(sp.heading, 3),
                                        "lair": [round(sp.home_x), round(sp.home_y)]} for sp in self.world.spiders],
-                          "spider_closing": self.world.spider_closing, "sight_r": SIGHT_R,
+                          "spider_closing": self.world.spider_closing, "sight_r": SIGHT_R, "startle_r": STARTLE_R,
                           "fly_dead": self.world.fly_dead > 0,
                           "eating": round(self.world.eating / 1.5, 2),
                           "score": self.world.score, "caught": self.world.caught,
                           "events": [e for t_ev, e in self.world.events if e and t_ev > (self.tick - 20) * TICK_MS / 1000.0]},
                 "heat": {"phase": self.phase, "time_left": round(self.phase_t, 1), "winner": self.winner,
-                         "players": {s: (p["name"] if p else None) for s, p in self.duel.items()},
+                         "mode": self.world.mode,
+                         "zones": [{"id": z, "label": ZONE_UI[z][0], "colour": ZONE_UI[z][1], "rect": ZONE_UI[z][2]} for z in self.seats],
+                         "players": {s: (p["name"] if p else None) for s, p in self.seats.items()},
                          "leaderboard": sorted(({"name": n, **v} for n, v in self.leaderboard.items()),
                                                key=lambda r: (-r["wins"], -r["points"], r["name"]))[:10]},
                 "fainted": fainted,
@@ -371,6 +391,18 @@ async def host():
     return FileResponse(WEB / "host.html")
 
 
+@app.get("/qr.svg")
+async def qr_svg():
+    """Join QR code for the beamer, built from the current LAN address (follows a network switch)."""
+    import qrcode
+    import qrcode.image.svg
+    from fastapi.responses import Response
+    url = f"http://{lan_ips()[0]}:{PORT}/play"
+    img = qrcode.make(url, image_factory=qrcode.image.svg.SvgPathFillImage, border=2)
+    return Response(img.to_string(), media_type="image/svg+xml",
+                    headers={"Cache-Control": "no-store", "X-Join-Url": url})
+
+
 @app.get("/favicon.ico")
 async def favicon():
     from fastapi.responses import Response
@@ -421,7 +453,7 @@ async def ws_endpoint(ws: WebSocket):
                 now = time.monotonic()
                 if now - last_drop[kind] >= (BITTER_COOLDOWN_S if kind == "bitter" else SUGAR_COOLDOWN_S):
                     last_drop[kind] = now
-                    side = next((s for s, p in game.duel.items() if p and p["cid"] == cid), None)
+                    side = next((s for s, p in game.seats.items() if p and p["cid"] == cid), None)
                     game.cmds.put(("drop", (float(msg.get("x", 0)), float(msg.get("y", 0)), kind, side)))
             elif t == "join_duel":
                 name = str(msg.get("name", ""))[:16].strip() or "?"
@@ -443,25 +475,61 @@ app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
 
 
 # ----------------------------------------------------------------------------- startup banner
+# Interfaces a phone on the wifi cannot reach. A VPN that owns the default route used to win the
+# "outbound address" test below, and the QR code then pointed into the tunnel (10.5.0.2).
+TUNNEL_IFACES = ("utun", "tun", "tap", "wg", "ppp", "ipsec", "tailscale", "gif", "stf")
+# VM / container bridges. Ranked low, not dropped: the Mac's own Internet Sharing hotspot is a bridge too.
+VIRTUAL_IFACES = ("bridge", "vmenet", "vmnet", "vboxnet", "docker", "br-", "veth", "virbr")
+
+
+def iface_ips() -> list[tuple[str, str]]:
+    """(interface, IPv4) for every address on this machine, loopback excluded."""
+    out: list[tuple[str, str]] = []
+    try:
+        if sys.platform == "darwin":
+            iface = ""
+            for line in subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=3).stdout.splitlines():
+                if line and not line[0].isspace():
+                    iface = line.split(":")[0]
+                elif line.split()[:1] == ["inet"]:
+                    out.append((iface, line.split()[1]))
+        else:  # "2: wlan0    inet 192.168.1.5/24 brd ..."
+            for line in subprocess.run(["ip", "-4", "-o", "addr"], capture_output=True, text=True, timeout=3).stdout.splitlines():
+                f = line.split()
+                if len(f) > 3 and f[2] == "inet":
+                    out.append((f[1], f[3].split("/")[0]))
+    except Exception:
+        pass
+    return [(i, ip) for i, ip in out if not ip.startswith("127.")]
+
+
 def lan_ips() -> list[str]:
-    ips: list[str] = []
+    """Addresses to reach this server on, best guess for the phones first.
+
+    FLY_HOST=<ip or name> overrides the guess. Otherwise: real network cards (wifi, ethernet, an
+    iPhone hotspot) before VM bridges before VPN tunnels; within a class the address the OS would
+    use for outbound traffic comes first. Recomputed on every call, so it follows a network switch.
+    """
+    forced = os.environ.get("FLY_HOST", "").strip()
+    if forced:
+        return [forced]
+    default = ""
     try:  # the address the OS would use for an outbound packet (no packet is sent)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("10.255.255.255", 1))
-        ips.append(s.getsockname()[0])
+        default = s.getsockname()[0]
         s.close()
     except Exception:
         pass
-    try:  # every other IPv4 on this machine (hotspot / travel router interfaces)
-        cmd = ["ifconfig"] if sys.platform == "darwin" else ["ip", "-4", "-o", "addr"]
-        toks = subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout.split()
-        for prev, tok in zip(toks, toks[1:]):
-            if prev == "inet" and tok.count(".") == 3:
-                ip = tok.split("/")[0]
-                if not ip.startswith("127.") and ip not in ips:
-                    ips.append(ip)
-    except Exception:
-        pass
+
+    def rank(pair: tuple[str, str]) -> tuple[int, bool, bool]:
+        iface, ip = pair
+        kind = 2 if iface.startswith(TUNNEL_IFACES) else 1 if iface.startswith(VIRTUAL_IFACES) else 0
+        return (kind, ip.startswith("169.254."), ip != default)
+
+    ips = list(dict.fromkeys(ip for _, ip in sorted(iface_ips(), key=rank)))
+    if not ips and default and not default.startswith("127."):
+        ips = [default]  # no ifconfig / ip on this system: the outbound address is all we know
     return ips or ["127.0.0.1"]
 
 

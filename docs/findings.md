@@ -379,3 +379,72 @@ path and a good debrief line ("the legs are in this one, and it still needs a bo
   Feeding does not change the odds: the brain's escape response to a shadow is identical on
   sugar (DNp01 135 vs 133 Hz, same 50 ms latency), so a feeding fly jumps just as well; a
   charge only interrupts the meal. Rule added: a catch on your half is the opponent's point.
+
+## DISGUST: bitter has a readout after all (23 Sep 2026)
+Kim: "is there any signal from the brain when the fly is on a bitter drop?" The five labels
+said no: bitter 60 Hz leaves turn, walk, escape and feed at 0 (table above), so bitter showed
+only as an absence (HUNGRY going dark, DNg100 = 0 with nothing in view). Measured 1 s from a
+fresh brain, bitter both sides at the game's 60 Hz: 65 taste cells + **43 downstream neurons**,
+almost all in the SEZ (sugar 40 Hz: 379 downstream, 70 descending neurons; bitter: 2 descending,
+DNpe007 at 8-20 Hz). The strongest are one pair per side:
+
+| cell type | bitter 60 | sugar 40 | sugar 40 + bitter 60 | eye / shadow 150 |
+|---|---|---|---|---|
+| **CB0159** (1 per side) | **151 Hz** | 0 | 146 | 0 |
+| CB0016 | 91 | 0 | 90 | 0 |
+| CB0219 | 61 | 1 | 37 | 0 |
+
+CB0159 follows the bitter input almost one to one and nothing else the game feeds the brain
+touches it, so it is now the `disgust` output (build_neurons.py) and the sixth beamer label,
+DISGUST, full at 150 Hz. Honesty note: unlike DNa02 / MN9 / the giant fiber, no paper says what
+CB0159 does in a real fly; "disgust" is our name for "bitter interneuron that fires only on
+bitter". The neurons.json label and any nerd mode must show the cell name, not the claim.
+
+## Splash startle (24 Sep 2026): a drop dumped on the fly makes it jump
+Kim: drops placed on or just in front of the fly keep it on one half. Reproduced headless: a bot
+that drops sugar on the fly every 2 s (the cooldown) scores a point every 2 s and the fly never
+moves, because the nearest drop always wins its attention and there is no travel. Luring from
+ahead scores half that. Fix, in `senses.py` only: a drop that landed less than 0.15 s ago within
+STARTLE_R px looms on the shadow sense on its side (full rate inside STARTLE_NEAR, fading to 0 at
+the ring; first built as 150 / 60), like any object falling from above; the giant fibre fires and body.py jumps 180 px, the
+drop stays, and the fly has to walk back. Startle off = STARTLE_R forced to 0. 60 s duels, left
+bot only, two wandering spiders, 4 seeds each:
+
+| left bot places sugar | startle | left points (4 seeds) | mean | caught | jumps |
+|---|---|---|---|---|---|
+| on the fly | off | 27, 29, 29, 30 | **28.8** | 2 | 4 |
+| on the fly | **on** | 3, 2, 3, 2 | **2.5** | 7 | 115 |
+| 160 px ahead | off | 13, 15, 20, 10 | 14.5 | 6 | 19 |
+| 160 px ahead | on | 13, 11, 8, 7 | 9.8 | 8 | 39 |
+| 250 px ahead | off | 19, 9, 17, 7 | 13.0 | 7 | 16 |
+| 250 px ahead | on | 12, 12, 11, 9 | 11.0 | 8 | 19 |
+
+Farming is dead (a factor 11), and it gets the fly caught more often, because a pinball fly
+lands in spider rings.
+
+Kim: the 150 px ring looks too large. Sweep, same bot, 3 seeds, the bot either on the fly or
+just outside the ring:
+
+| ring (full-rate inside) | on the fly | just outside the ring |
+|---|---|---|
+| 150 / 60 | 2.5 (4 seeds) | 9.8 at 160 px |
+| 100 / 40 | 3.0 | 15.0 at 110 px |
+| **80 / 30** (chosen) | **1.0** | 15.0 at 90 px |
+
+The ring size does not matter for the exploit: any ring that covers the fly kills the zero-travel
+farm, and a drop 90 px away already costs the fly the same ~4 s of weaving that honest luring
+costs (15 points a minute either way, against 29 for a drop on its head). So the ring is 80 px,
+about the fly plus a drop's width (DROP_R 28), and luring from 160 px is untouched again. Luring from 160 px, right at the ring's edge with the fly's weave, loses
+about a third; from 250 px the loss is inside the seed noise. One faint in the 2-seed pilot,
+none in 24 runs here (shadow + sugar + eye at the same time is runaway-safe, "Sustained input").
+Costs no brain time (the shadow sense already existed). Not a hard rule: the phone draws the
+ring around the fly and says "lure from outside", the fly enforces it.
+
+To decide in a playtest: a bitter tap next to the fly on your half now knocks it off your sugar
+and it jumps roughly away from the tap's side, so the opponent has an indirect, scattered push.
+If that feels like a move button, let only sugar splash (in `World.splashes`). Also still open:
+sugar every 2 s against bitter every 4 s means spoiling cannot keep up with feeding.
+
+Found on the way: `Eyes._flow` divided by zero when a drop landed exactly on the fly (distance
+0), which would have killed the server's sim thread on a lucky tap. Guarded. `sim/demo_world.py`
+still reads `world.spider`, which became `world.spiders` on 22 Sep; it has not run since.

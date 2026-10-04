@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Fly by Committee</title>
+<title>Flyweight</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root { --bg: #0b0e14; --panel: #151a23; --ink: #e8ecf1; --dim: #4b5563; }
@@ -13,11 +13,13 @@
   header { display: flex; align-items: baseline; gap: 24px; padding: 10px 24px; }
   header h1 { margin: 0; font-size: 28px; letter-spacing: 1px; }
   header .status { margin-left: auto; color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+  header #snd { margin-left: 0; color: #fbbf24; } header #snd.on { color: var(--dim); }
   #stage { flex: 1; display: flex; gap: 12px; padding: 0 12px; min-height: 0; }
   .panel { position: relative; min-width: 0; }
   #arena-wrap { flex: 3; }
   #brain-wrap { flex: 2; background: var(--panel); border-radius: 16px; overflow: hidden; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #arena3d { pointer-events: none; }
   #labels { display: flex; gap: 12px; padding: 12px 24px 18px; }
   .label { flex: 1; text-align: center; padding: 18px 8px; border-radius: 14px; background: var(--panel);
     font-size: 34px; font-weight: 800; letter-spacing: 2px; color: #fff; opacity: .18;
@@ -32,7 +34,7 @@
   .chip { padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; color: #000; opacity: .25; }
   .chip.on { opacity: 1; }
   #score { position: absolute; left: 18px; right: 18px; bottom: 10px; display: flex; align-items: baseline; gap: 18px; font-size: 22px; font-weight: 800; letter-spacing: 1px; }
-  #score .l { color: #3b82f6; } #score .r { color: #f59e0b; margin-left: auto; } #score .clock { color: #e8ecf1; font-size: 30px; font-variant-numeric: tabular-nums; }
+  #score > span { white-space: nowrap; } #score .clock { color: #e8ecf1; font-size: 30px; font-variant-numeric: tabular-nums; }
   #score .clock.low { color: #ef4444; } #score small { color: #9aa3ad; font-weight: 500; font-size: 14px; }
   #board { position: absolute; right: 18px; top: 12px; background: rgba(21,26,35,.9); border-radius: 14px; padding: 10px 14px; font-size: 14px; display: none; min-width: 220px; }
   #board.show { display: block; } #board h3 { margin: 0 0 6px; font-size: 13px; letter-spacing: 2px; color: #9aa3ad; }
@@ -45,6 +47,10 @@
   #brain-top { position: absolute; left: 14px; right: 14px; top: 10px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
   #brain-top .title { font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #9aa3ad; }
   #brain-top .spacer { flex: 1; }
+  #brain-top .title { white-space: nowrap; }
+  #brain-hint { position: absolute; left: 18px; bottom: 12px; font-size: 12px; color: var(--dim); pointer-events: none; display: none; }
+  #brain-wrap.rot #brain-hint { display: block; }
+  #brain-wrap.rot #brain { cursor: grab; } #brain-wrap.rot #brain:active { cursor: grabbing; }
   #replay-btn { pointer-events: auto; background: #1f2937; color: var(--ink); border: 1px solid #374151; border-radius: 999px;
     padding: 7px 14px; font-size: 14px; font-weight: 700; cursor: pointer; }
   #replay-btn:hover { background: #374151; }
@@ -54,17 +60,22 @@
   #replay-info .t { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; }
   #replay-info .chips { display: flex; justify-content: center; gap: 8px; margin-top: 6px; }
   #replay-info .chips .chip { opacity: 1; }
+  #join { position: absolute; right: 14px; bottom: 14px; background: #fff; color: #000; border-radius: 12px; padding: 8px 8px 6px;
+    text-align: center; font-size: 13px; font-weight: 700; display: none; pointer-events: none; }
+  #join.show { display: block; } #join img { display: block; width: 170px; height: 170px; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <header>
-    <h1>FLY BY COMMITTEE</h1>
+    <h1>FLYWEIGHT</h1>
+    <span id="snd" class="status">🔇 click anywhere for sound</span>
     <span id="conn" class="status">connecting…</span>
   </header>
   <div id="stage">
     <div id="arena-wrap" class="panel">
       <canvas id="arena"></canvas>
+      <canvas id="arena3d"></canvas>
       <div id="held"></div>
       <div id="faint">THE FLY FAINTED<small>too much at once — back in a moment</small></div>
       <div id="score"></div>
@@ -73,6 +84,7 @@
       <div id="heat-banner"></div>
     </div>
     <div id="brain-wrap" class="panel">
+      <canvas id="brain3d"></canvas>
       <canvas id="brain"></canvas>
       <div id="brain-top">
         <span class="title" id="brain-title">THE BRAIN · 138,639 NEURONS · LIVE</span>
@@ -80,6 +92,8 @@
         <button id="replay-btn" title="key R">⏪ REPLAY LAST 1.5 s IN SLOW MOTION</button>
       </div>
       <div id="replay-info"><div class="big">SLOW MOTION · 1/10 SPEED</div><div class="t">+0 ms</div><div class="chips"></div></div>
+      <div id="join"><img id="join-qr" alt="">scan to play<br><span id="join-url"></span></div>
+      <div id="brain-hint">drag to turn · scroll to zoom · F or double-click for the front view</div>
     </div>
   </div>
   <div id="labels">
@@ -88,27 +102,51 @@
     <div class="label" id="l-panic"     style="background:#ef4444">PANIC!<small>&nbsp;</small></div>
     <div class="label" id="l-hungry"    style="background:#22c55e">HUNGRY<small>&nbsp;</small></div>
     <div class="label" id="l-walk"      style="background:#a855f7">WALK<small>&nbsp;</small></div>
+    <div class="label" id="l-disgust"   style="background:#14b8a6">DISGUST<small>&nbsp;</small></div>
   </div>
 </div>
+<script type="importmap">{ "imports": { "three": "/static/vendor/three/build/three.module.js" } }</script>
 <script type="module">
 import { connect } from "/static/ws.js";
+import { Creatures } from "/static/creatures.js";
+import { Sound } from "/static/sound.js";
+import { Brain3D } from "/static/brain3d.js";
 
 // Role colours: must match play.html so a phone's colour = the fly's body part on screen.
 const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9f0", right_shadow: "#c77dff", sugar: "#8ac926", bitter: "#ffd166" };
 const NAMES = { left_eye: "Left eye", right_eye: "Right eye", left_shadow: "Left shadow", right_shadow: "Right shadow", sugar: "Sugar", bitter: "Bitter" };
 // Output rate (Hz) at which a label is fully lit. From docs/findings.md.
-const FULL = { turnleft: 140, turnright: 70, panic: 150, hungry: 60, walk: 110 };
+const FULL = { turnleft: 140, turnright: 70, panic: 150, hungry: 60, walk: 110, disgust: 150 };
 const TICK_MS = 50, CHUNK_MS = 5;
 
 const $ = (id) => document.getElementById(id);
+
+// Join QR code: the server builds it from its current LAN address; refetch so a network switch shows up.
+async function loadJoinQr() {
+  try {
+    const r = await fetch("/qr.svg", { cache: "no-store" });
+    const svg = await r.blob(), url = r.headers.get("X-Join-Url") || "";
+    const img = $("join-qr"); if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+    img.src = URL.createObjectURL(svg); $("join-url").textContent = url.replace(/^http:\/\//, "");
+  } catch (e) { /* server not reachable: keep the old code */ }
+}
+loadJoinQr(); setInterval(loadJoinQr, 15000);
 const arena = $("arena"), actx = arena.getContext("2d");
+const arena3d = $("arena3d"), creatures = new Creatures(arena3d);   // 3D spiders over the 2D arena; falls back to 2D if it cannot
+window.creatures = creatures;                                          // console handle for tuning (size, clips) at the venue
+let view = null;                                                       // the arena's world->screen transform, shared with the 3D layer
+const sound = new Sound(); window.sound = sound;                       // console handle for the mix at the venue (sound.mix)
+sound.onchange = () => { const el = $("snd"), on = sound.running && !sound.muted; el.classList.toggle("on", on);
+  el.textContent = !sound.running ? "🔇 click anywhere for sound" : sound.muted ? "🔇 muted · M" : "🔊 sound on · M mutes"; };
 const brain = $("brain"), bctx = brain.getContext("2d");
+const brain3d = new Brain3D($("brain3d"), brain);                     // rotatable point cloud under the 2D labels; flat view if it cannot
+window.brain3d = brain3d;                                              // console handle for tuning (pointSize, sway) at the venue
 for (const b of Object.keys(COLOURS)) {
   const c = document.createElement("span"); c.className = "chip"; c.id = "chip-" + b; c.textContent = NAMES[b];
   c.style.background = COLOURS[b]; $("held").appendChild(c);
 }
 
-let state = null, trail = [], faintTimer = null, lastEvent = { name: "", tick: -100 };
+let state = null, trail = [], faintTimer = null, lastEvent = {};   // event name -> tick it last fired
 
 function setLabel(id, hz, full) {
   const el = $("l-" + id), v = Math.min(1, hz / full);
@@ -123,6 +161,7 @@ function setLabels(o) {
   setLabel("panic", (o.escape.left + o.escape.right) / 2, FULL.panic);
   setLabel("hungry", (o.feed.left + o.feed.right) / 2, FULL.hungry);
   setLabel("walk", (o.walk.left + o.walk.right) / 2, FULL.walk);
+  setLabel("disgust", (o.disgust.left + o.disgust.right) / 2, FULL.disgust);
 }
 
 // ------------------------------------------------------------------ brain view data
@@ -140,6 +179,7 @@ const CLASSES = [
   { key: "panic", group: ["outputs", "escape", "*"], colour: [239, 68, 68], label: "PANIC!" },
   { key: "hungry", group: ["outputs", "feed", "*"], colour: [34, 197, 94], label: "HUNGRY" },
   { key: "walk", group: ["outputs", "walk", "*"], colour: [168, 85, 247], label: "WALK" },
+  { key: "disgust", group: ["outputs", "disgust", "*"], colour: [20, 184, 166], label: "DISGUST" },
 ];
 let pos = null, N = 0, cls = null, landmarks = [], bounds = null, flipX = false, bg = null, bgW = 0, bgH = 0;
 
@@ -159,6 +199,8 @@ async function loadBrain() {
   const mx = (idx) => idx.reduce((a, i) => a + pos[3 * i], 0) / idx.length;
   flipX = mx(groups.senses.eye_target.left) > mx(groups.senses.eye_target.right);
   bg = null;
+  brain3d.setData(pos, cls, CLASSES, flipX);
+  $("brain-wrap").classList.toggle("rot", brain3d.ready);
 }
 loadBrain();
 
@@ -188,17 +230,21 @@ function renderBackground(W, H) {
   // canvas is filled with panel colour first; putImageData replaces it, so paint the panel colour into unset pixels
   for (let o = 0; o < d.length; o += 4) if (!d[o + 3]) { d[o] = 0x15; d[o + 1] = 0x1a; d[o + 2] = 0x23; d[o + 3] = 255; }
   c.putImageData(img, 0, 0);
-  // landmark output neurons: ring on the neuron, plain-language label in the margin with a leader line.
-  // One label per output per side, stacked so they never overlap.
+  drawLandmarks(c, W, project);
+}
+// Landmark output neurons: ring on the neuron, plain-language label in the margin with a leader line.
+// One label per output per side, stacked so they never overlap. `projectFn` maps a neuron index to
+// canvas px: the flat projection once into the background, or the 3D camera every frame.
+function drawLandmarks(c, W, projectFn) {
   const dpr = devicePixelRatio;
   c.font = `700 ${13 * dpr}px -apple-system, Helvetica, Arial`; c.textBaseline = "middle";
   const seen = {}, cols = { left: [], right: [] };
   for (const l of landmarks) {
-    const [x, y] = project(l.i), col = CLASSES[l.k];
+    const [x, y] = projectFn(l.i), col = CLASSES[l.k];
     c.strokeStyle = `rgb(${col.colour})`; c.lineWidth = 1.5 * dpr;
     c.beginPath(); c.arc(x, y, 6 * dpr, 0, Math.PI * 2); c.stroke();
     const key = col.key + l.side; if (seen[key]) continue; seen[key] = 1;
-    cols[x < W / 2 ? "left" : "right"].push({ x, y, col });
+    cols[l.side].push({ x, y, col });     // column by hemisphere, so a label keeps its side while the brain turns
   }
   for (const side of ["left", "right"]) {
     const list = cols[side].sort((a, b) => a.y - b.y), gap = 24 * dpr;
@@ -237,10 +283,13 @@ function startReplay() {
 }
 function endReplay() { replay = null; $("replay-info").classList.remove("show"); $("brain-title").textContent = "THE BRAIN · 138,639 NEURONS · LIVE"; }
 $("replay-btn").addEventListener("click", startReplay);
-addEventListener("keydown", (e) => { if (e.key === "r" || e.key === "R") replay ? endReplay() : startReplay(); });
+addEventListener("keydown", (e) => { if (e.key === "r" || e.key === "R") replay ? endReplay() : startReplay(); if (e.key === "f" || e.key === "F") brain3d.front(); });
 
+// Draws every spike younger than `fade` ms at sim time `now`: into the 2D canvas, or into the 3D
+// spike buffer when the point cloud is up (same dots, same fade, drawn by brain3d.render()).
 function drawSpikes(frames, now, fade, dpr) {
-  bctx.globalCompositeOperation = "lighter";
+  const in3d = brain3d.ready;
+  if (in3d) brain3d.beginSpikes(); else bctx.globalCompositeOperation = "lighter";
   const r = 1.6 * dpr, rl = 5 * dpr;
   for (const f of frames) {
     if (f.t > now || f.t + TICK_MS < now - fade) continue;
@@ -249,18 +298,20 @@ function drawSpikes(frames, now, fade, dpr) {
       const e = ev[j], i = e & 0x3FFFF, te = f.t + (e >>> 18) * CHUNK_MS;
       const age = now - te; if (age < 0 || age > fade) continue;
       const k = cls[i], col = CLASSES[k].colour, alpha = (1 - age / fade) * (k ? 1 : 0.7);
+      if (in3d) { brain3d.addSpike(i, col, alpha, k >= 7 ? 2 * (rl + 6 * dpr * (1 - age / fade)) : 2.4 * r); continue; }
       const [x, y] = project(i);
       bctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
       if (k >= 7) { bctx.beginPath(); bctx.arc(x, y, rl + 6 * dpr * (1 - age / fade), 0, Math.PI * 2); bctx.fill(); }
       else bctx.fillRect(x - r, y - r, 2 * r, 2 * r);
     }
   }
-  bctx.globalCompositeOperation = "source-over";
+  if (!in3d) bctx.globalCompositeOperation = "source-over";
 }
 
 // ------------------------------------------------------------------ frame loop
 function resize() {
-  for (const c of [arena, brain]) { const r = c.getBoundingClientRect(); c.width = Math.round(r.width * devicePixelRatio); c.height = Math.round(r.height * devicePixelRatio); }
+  for (const c of [arena, arena3d, brain, $("brain3d")]) { const r = c.getBoundingClientRect(); c.width = Math.round(r.width * devicePixelRatio); c.height = Math.round(r.height * devicePixelRatio); }
+  brain3d.resize(brain.width, brain.height);
   bg = null;
 }
 addEventListener("resize", resize); resize();
@@ -274,15 +325,20 @@ function drawArena() {
   const s = Math.min((W - 20 * devicePixelRatio) / aw, (H - 20 * devicePixelRatio) / ah);
   const ox = (W - aw * s) / 2, oy = (H + ah * s) / 2;
   // World -> screen: body.py uses maths coordinates (y up, heading counter-clockwise), so flip y.
-  ctx.setTransform(s, 0, 0, -s, ox, oy);
+  ctx.setTransform(s, 0, 0, -s, ox, oy); view = { s, ox, oy };
   ctx.fillStyle = "#11161f"; ctx.fillRect(0, 0, aw, ah);
-  ctx.fillStyle = "rgba(59,130,246,.07)"; ctx.fillRect(0, 0, aw / 2, ah);
-  ctx.fillStyle = "rgba(245,158,11,.07)"; ctx.fillRect(aw / 2, 0, aw / 2, ah);
-  ctx.strokeStyle = "#374151"; ctx.lineWidth = 3; ctx.setLineDash([14, 10]); ctx.beginPath(); ctx.moveTo(aw / 2, 0); ctx.lineTo(aw / 2, ah); ctx.stroke(); ctx.setLineDash([]);
+  // each player's ground (two halves or four quadrants) in their colour, split by dashed lines
+  ctx.globalAlpha = 0.07;
+  for (const z of state.heat.zones) { const [x0, y0, x1, y1] = z.rect; ctx.fillStyle = z.colour; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); }
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = "#374151"; ctx.lineWidth = 3; ctx.setLineDash([14, 10]); ctx.beginPath(); ctx.moveTo(aw / 2, 0); ctx.lineTo(aw / 2, ah);
+  if (state.heat.mode === "quad") { ctx.moveTo(0, ah / 2); ctx.lineTo(aw, ah / 2); }
+  ctx.stroke(); ctx.setLineDash([]);
   ctx.strokeStyle = "#1f2937"; ctx.lineWidth = 2 / s; ctx.strokeRect(0, 0, aw, ah);
+  // grid lines grow outward from the centre of the arena, so the bands cut off at the edges are equal
   ctx.beginPath();
-  for (let x = 200; x < aw; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, ah); }
-  for (let y = 200; y < ah; y += 200) { ctx.moveTo(0, y); ctx.lineTo(aw, y); }
+  for (let x = (aw / 2 % 200) || 200; x < aw; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, ah); }
+  for (let y = (ah / 2 % 200) || 200; y < ah; y += 200) { ctx.moveTo(0, y); ctx.lineTo(aw, y); }
   ctx.stroke();
   if (trail.length > 1) {
     ctx.lineWidth = 3; ctx.lineCap = "round";
@@ -294,7 +350,7 @@ function drawArena() {
     }
   }
   const f = state.fly, held = new Set(state.held), w = state.world, senses = state.senses || [];
-  // the lairs: one per half
+  // the lairs: one per half (on the quadrant border in 4-player mode)
   ctx.strokeStyle = "rgba(239,68,68,.35)"; ctx.lineWidth = 2; ctx.setLineDash([3, 6]);
   for (const { lair: [lx, ly] } of w.spiders) {
     for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI; ctx.beginPath(); ctx.moveTo(lx - 50 * Math.cos(a), ly - 50 * Math.sin(a)); ctx.lineTo(lx + 50 * Math.cos(a), ly + 50 * Math.sin(a)); ctx.stroke(); }
@@ -302,6 +358,10 @@ function drawArena() {
   ctx.setLineDash([]);
   // drops: green = sugar, yellow = bitter (spoiled drop or bitter puddle)
   for (const d of w.drops) {
+    if (creatures.dropsReady) {   // 3D drops; only the bitter decoy keeps a faint 2D halo so it reads at a distance
+      if (d.bitter && !d.sugar) { ctx.fillStyle = "rgba(255,209,102,.12)"; ctx.beginPath(); ctx.arc(d.x, d.y, 30, 0, Math.PI * 2); ctx.fill(); }
+      continue;
+    }
     const c = d.bitter ? COLOURS.bitter : COLOURS.sugar;
     ctx.fillStyle = d.bitter ? "rgba(255,209,102,.2)" : "rgba(138,201,38,.25)"; ctx.beginPath(); ctx.arc(d.x, d.y, 28, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = c; ctx.beginPath(); ctx.arc(d.x, d.y, 12, 0, Math.PI * 2); ctx.fill();
@@ -325,6 +385,7 @@ function drawArena() {
     ctx.strokeStyle = hunting ? "rgba(239,68,68,.6)" : resting ? "rgba(107,114,128,.2)" : "rgba(239,68,68,.2)"; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
     ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     if (hunting) { ctx.fillStyle = "rgba(239,68,68,.12)"; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); }
+    if (creatures.spidersReady) { ctx.restore(); continue; }   // the body is the 3D model's job
     ctx.strokeStyle = resting ? "#4b5563" : hunting ? "#dc2626" : "#7f1d1d"; ctx.lineWidth = 4; ctx.lineCap = "round";
     const wig = hunting ? Math.sin(performance.now() / 40) * 0.25 : 0;
     for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + 0.2 + (k % 2 ? wig : -wig); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(38 * Math.cos(a), 38 * Math.sin(a)); ctx.stroke(); }
@@ -339,6 +400,19 @@ function drawArena() {
   }
   const glow = state.fainted || w.fly_dead ? "#6b7280" : "#e8ecf1";
   if (w.fly_dead) ctx.rotate(Math.PI);   // on its back
+  if (!creatures.flyReady) drawFlyBody(ctx, f, held, glow);   // otherwise the 3D model is the body
+  if (f.feeding) {
+    // the proboscis: from the front of the 3D head when it is up (fly-local coordinates), else from the 2D head
+    let hx = 38, hy = 0, len = 24; const h = creatures.flyHead();
+    if (h) { const dx = h.x - f.x, dy = h.y - f.y, c = Math.cos(f.heading), sn = Math.sin(f.heading); hx = dx * c + dy * sn; hy = dy * c - dx * sn; len = 8; }
+    ctx.strokeStyle = COLOURS.sugar; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + len, hy); ctx.stroke();
+  }
+  if (f.jumped) { ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 70, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// The hand-drawn fly: the fallback when the 3D layer is not up. Eyes glow with the input rate (graded).
+function drawFlyBody(ctx, f, held, glow) {
   ctx.fillStyle = "#3a3f4b"; ctx.beginPath(); ctx.ellipse(-22, 0, 26, 16, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#2b2f3a"; ctx.beginPath(); ctx.ellipse(-30, 24, 30, 10, 0.25, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(-30, -24, 30, 10, -0.25, 0, Math.PI * 2); ctx.fill();
@@ -349,20 +423,22 @@ function drawArena() {
   const mix = (a, b, t) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
   ctx.fillStyle = mix([122, 32, 53], [255, 77, 109], eyeL); ctx.beginPath(); ctx.arc(32, 8, 6, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = mix([122, 74, 21], [255, 159, 28], eyeR); ctx.beginPath(); ctx.arc(32, -8, 6, 0, Math.PI * 2); ctx.fill();
-  if (f.feeding) { ctx.strokeStyle = COLOURS.sugar; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(38, 0); ctx.lineTo(62, 0); ctx.stroke(); }
-  if (f.jumped) { ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 70, 0, Math.PI * 2); ctx.stroke(); }
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 function drawBrain(dtMs) {
   const W = brain.width, H = brain.height, dpr = devicePixelRatio;
   bctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (!pos) { bctx.fillStyle = "#151a23"; bctx.fillRect(0, 0, W, H); return; }
-  if (!bg || bgW !== W || bgH !== H) renderBackground(W, H);
-  bctx.drawImage(bg, 0, 0);
+  const in3d = brain3d.ready;
+  if (in3d) { bctx.clearRect(0, 0, W, H); brain3d.update(dtMs); }     // the point cloud is underneath; this canvas keeps labels only
+  else if (!pos) { bctx.fillStyle = "#151a23"; bctx.fillRect(0, 0, W, H); return; }
+  else { if (!bg || bgW !== W || bgH !== H) renderBackground(W, H); bctx.drawImage(bg, 0, 0); }
+  drawSpikesNow(dtMs, dpr);
+  if (in3d) { brain3d.render(); drawLandmarks(bctx, W, (i) => brain3d.project(i)); }
+}
+function drawSpikesNow(dtMs, dpr) {
   if (replay) {
     replay.shownT += dtMs * 0.1;
-    if (replay.shownT > replay.end) { endReplay(); return; }
+    if (replay.shownT > replay.end) { endReplay(); if (brain3d.ready) brain3d.beginSpikes(); return; }
     drawSpikes(replay.frames, replay.shownT, 40, dpr);
     const info = $("replay-info");
     info.querySelector(".t").textContent = `+${Math.round(replay.shownT - replay.start)} ms`;
@@ -383,13 +459,13 @@ function drawBrain(dtMs) {
     if (shownT > target + TICK_MS) shownT = target + TICK_MS;     // don't run ahead of data
     if (shownT < target - 3 * TICK_MS) shownT = target;            // fell behind: jump
     drawSpikes(ticks, shownT, 250, dpr);
-  }
+  } else if (brain3d.ready) brain3d.beginSpikes();
 }
 
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(100, now - lastFrame); lastFrame = now;
-  drawArena(); drawBrain(dt);
+  drawArena(); creatures.render(dt, view, arena3d.width, arena3d.height); drawBrain(dt);
 }
 requestAnimationFrame(frame);
 
@@ -404,7 +480,7 @@ const sock = connect({
       trail = [];
     }
     if (m.type !== "state") return;
-    state = m;
+    state = m; creatures.sync(m);
     const f = ticks.find((x) => x.tick === m.tick); if (f) { f.held = m.held; f.outputs = m.outputs; }
     trail.push({ x: m.fly.x, y: m.fly.y }); if (trail.length > 120) trail.shift();
     if (!replay) setLabels(m.outputs);
@@ -412,21 +488,30 @@ const sock = connect({
     const lit = { left_eye: sensed.has("drop left"), right_eye: sensed.has("drop right"), left_shadow: sensed.has("shadow left"),
                   right_shadow: sensed.has("shadow right"), sugar: sensed.has("sugar"), bitter: sensed.has("bitter") };
     for (const b of Object.keys(COLOURS)) $("chip-" + b).classList.toggle("on", held.has(b) || lit[b]);
-    const h = m.heat, pl = h.players, sc = m.world.score;
+    const h = m.heat, pl = h.players, sc = m.world.score, quad = h.mode === "quad";
     const clock = h.phase === "playing" ? Math.ceil(h.time_left) + " s" : h.phase === "countdown" ? Math.ceil(h.time_left) : h.phase === "over" ? "TIME" : "";
-    $("score").innerHTML = `<span class="l">${pl.left || "LEFT"} ${sc.left}</span><span class="clock ${h.phase === "playing" && h.time_left < 10 ? "low" : ""}">${clock}</span>` +
-      `<small>${h.phase === "lobby" ? "waiting for the host · " : ""}${m.world.caught} caught by the spider · a catch on your half is their point</small><span class="r">${sc.right} ${pl.right || "RIGHT"}</span>`;
-    const hb = $("heat-banner");
-    if (h.phase === "countdown") { hb.innerHTML = `${Math.ceil(h.time_left)}<small>${pl.left || "LEFT"} vs ${pl.right || "RIGHT"}</small>`; hb.classList.add("show"); }
-    else if (h.phase === "over") { const wn = h.winner === "draw" ? "DRAW" : (pl[h.winner] || h.winner.toUpperCase()) + " WINS"; hb.innerHTML = `${wn}<small>${sc.left} – ${sc.right}</small>`; hb.style.color = h.winner === "left" ? "#3b82f6" : h.winner === "right" ? "#f59e0b" : "#e8ecf1"; hb.classList.add("show"); }
+    // players on the left of the arena sit left of the clock, the others right of it (name first on the left, score first on the right)
+    const west = h.zones.filter((z) => z.rect[0] === 0), east = h.zones.filter((z) => z.rect[0] !== 0);
+    $("score").innerHTML = west.map((z) => `<span style="color:${z.colour}">${pl[z.id] || z.label} ${sc[z.id]}</span>`).join("") +
+      `<span class="clock ${h.phase === "playing" && h.time_left < 10 ? "low" : ""}">${clock}</span>` +
+      `<small>${h.phase === "lobby" ? "waiting for the host · " : ""}${m.world.caught} caught by the spider · ${quad ? "a catch in your quadrant is a point for everyone else" : "a catch on your half is their point"}</small>` +
+      east.map((z, i) => `<span style="color:${z.colour}${i === 0 ? ";margin-left:auto" : ""}">${sc[z.id]} ${pl[z.id] || z.label}</span>`).join("");
+    const hb = $("heat-banner"), zc = Object.fromEntries(h.zones.map((z) => [z.id, z]));
+    if (h.phase === "countdown") { hb.innerHTML = `${Math.ceil(h.time_left)}<small>${h.zones.map((z) => pl[z.id] || z.label).join(" vs ")}</small>`; hb.classList.add("show"); }
+    else if (h.phase === "over") { const wn = h.winner === "draw" ? "DRAW" : (pl[h.winner] || zc[h.winner]?.label || h.winner.toUpperCase()) + " WINS"; hb.innerHTML = `${wn}<small>${h.zones.map((z) => sc[z.id]).join(" – ")}</small>`; hb.style.color = zc[h.winner]?.colour || "#e8ecf1"; hb.classList.add("show"); }
     else { hb.classList.remove("show"); hb.style.color = ""; }
+    $("join").classList.toggle("show", h.phase !== "playing" && h.phase !== "countdown");
     const lb = h.leaderboard || [], board = $("board");
     if (lb.length) {
       board.classList.add("show");
       board.innerHTML = "<h3>LEADERBOARD</h3><table>" + lb.map((r) => `<tr><td>${r.name}</td><td class="n">${r.wins} W</td><td class="n">${r.points} pts</td></tr>`).join("") + "</table>";
     } else board.classList.remove("show");
-    for (const e of m.world.events) if (e !== lastEvent.name || m.tick - lastEvent.tick > 20) {
-      lastEvent = { name: e, tick: m.tick };
+    // an event stays in the state for 20 ticks: fire each name once per window, even when two differ
+    const fresh = m.world.events.filter((e) => !(m.tick - (lastEvent[e] ?? -100) <= 20));
+    sound.sync(m, fresh);
+    for (const e of fresh) {
+      lastEvent[e] = m.tick;
+      if (e === "CAUGHT") creatures.pounce(m.fly);
       const fl = $("flash"); fl.textContent = e === "EAT" ? "NOM!" : e === "CAUGHT" ? "GOT YOU!" : e; fl.style.color = e === "EAT" ? "#8ac926" : e === "SPOILED!" ? "#ffd166" : "#ef4444";
       if (e === "SPIDER!") fl.style.fontSize = "40px"; else fl.style.fontSize = "";
       fl.classList.add("show"); setTimeout(() => fl.classList.remove("show"), e === "CAUGHT" ? 1500 : 700);

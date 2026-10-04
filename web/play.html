@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Fly by Committee — play</title>
+<title>Flyweight — play</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -18,7 +18,8 @@
   input { width: 100%; font-size: 22px; padding: 14px; border-radius: 14px; border: 1px solid #374151; background: #151a23; color: #e8ecf1; -webkit-user-select: text; user-select: text; }
   .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
   .side { border: 0; border-radius: 18px; font-size: 24px; font-weight: 800; color: #000; padding: 34px 0; }
-  .side.left { background: #3b82f6; } .side.right { background: #f59e0b; }
+  .sides.quad .side { font-size: 18px; padding: 26px 0; }
+  .side.taken { opacity: .45; }
   .more { margin-top: auto; text-align: center; color: #6b7280; font-size: 14px; text-decoration: underline; }
   .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
   .role { border: 0; border-radius: 18px; font-size: 22px; font-weight: 800; color: #000; }
@@ -47,9 +48,9 @@
 <body>
 <section id="pick" class="screen show">
   <h1>LURE THE FLY</h1>
-  <p class="hint">You don't control the fly. You control what it wants. Sugar on your half, bitter on theirs.</p>
+  <p class="hint">You don't control the fly. You control what it wants. Sugar on your own ground, bitter on everyone else's.</p>
   <input id="name" placeholder="your name" maxlength="16" autocomplete="off">
-  <div class="sides"><button class="side left" id="pick-left">PLAY LEFT</button><button class="side right" id="pick-right">PLAY RIGHT</button></div>
+  <div class="sides" id="sides"><p class="hint">connecting…</p></div>
   <div class="more" id="more">be one sense instead (demo mode)</div>
 </section>
 <section id="roles" class="screen">
@@ -67,7 +68,6 @@
 import { connect } from "/static/ws.js";
 
 const COLOURS = { left_eye: "#ff4d6d", right_eye: "#ff9f1c", left_shadow: "#4cc9f0", right_shadow: "#c77dff", sugar: "#8ac926", bitter: "#ffd166", tongue: "#8ac926" };
-const SIDE_COLOUR = { left: "#3b82f6", right: "#f59e0b" };
 const ROLES = [
   { id: "left_eye", label: "Left eye", buttons: [["left_eye", "LEFT EYE", "I see something on the left"]] },
   { id: "right_eye", label: "Right eye", buttons: [["right_eye", "RIGHT EYE", "I see something on the right"]] },
@@ -78,32 +78,49 @@ const ROLES = [
 const $ = (id) => document.getElementById(id);
 let role = null, side = null, myName = "", sock = null, held = new Set(), heartbeat = null, state = null;
 const cool = { sugar: 0, bitter: 0 };
-let lastPhase = null;
+let lastPhase = null, seatsKey = null;
 
 function show(id) { for (const s of document.querySelectorAll(".screen")) s.classList.toggle("show", s.id === id); }
 function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
 
 // ---------------------------------------------------------------- duel
 try { $("name").value = localStorage.getItem("name") || ""; } catch {}
-for (const s of ["left", "right"]) $("pick-" + s).addEventListener("click", () => {
-  myName = $("name").value.trim().slice(0, 16); if (!myName) { $("name").focus(); return; }
-  try { localStorage.setItem("name", myName); localStorage.setItem("side", s); } catch {}
-  buzz(30); joinDuel(s);
-});
+// the seat buttons come from the server: two halves (duel) or four quadrants, laid out like the arena
+function renderSeats(h) {
+  const key = h.mode + JSON.stringify(h.players); if (key === seatsKey) return; seatsKey = key;
+  const box = $("sides"); box.className = "sides" + (h.mode === "quad" ? " quad" : ""); box.innerHTML = "";
+  for (const z of h.zones) {
+    const b = document.createElement("button"), who = h.players[z.id];
+    b.className = "side" + (who ? " taken" : ""); b.style.background = z.colour;
+    b.textContent = who ? `${z.label}: ${who}` : `PLAY ${z.label}`;
+    b.addEventListener("click", () => {
+      myName = $("name").value.trim().slice(0, 16); if (!myName) { $("name").focus(); return; }
+      try { localStorage.setItem("name", myName); localStorage.setItem("side", z.id); } catch {}
+      buzz(30); joinDuel(z.id);
+    });
+    box.appendChild(b);
+  }
+}
+const zoneOf = (id) => state && state.heat.zones.find((z) => z.id === id);
+function zoneAt(x, y) {   // same split as World.zone() in sim/world.py, so a tap on a border lands where the server puts it
+  const left = x < state.arena.w / 2;
+  return state.heat.mode === "quad" ? (y >= state.arena.h / 2 ? "t" : "b") + (left ? "l" : "r") : left ? "left" : "right";
+}
 function joinDuel(s) {
   side = s; role = null;
+  const z = zoneOf(s), quad = state.heat.mode === "quad", ground = quad ? "quadrant" : "half";
   sock.send({ type: "join_duel", name: myName, side: s });
-  $("who").textContent = `${myName} · ${s.toUpperCase()}`; $("who").style.color = SIDE_COLOUR[s];
+  $("who").textContent = `${myName} · ${z.label}`; $("who").style.color = z.colour;
   $("buttons").innerHTML = `<canvas id="mini"></canvas>
-    <div class="bar"><span>YOU <b id="my-score">0</b></span><span id="clock">waiting for the host</span><span>THEM <b id="their-score">0</b></span></div>
+    <div class="bar"><span>YOU <b id="my-score">0</b></span><span id="clock">waiting for the host</span><span id="their-score"></span></div>
     <div class="cool"><div><span id="cool-sugar" style="background:${COLOURS.sugar}"></span></div><div><span id="cool-bitter" style="background:${COLOURS.bitter}"></span></div></div>
-    <div class="legend"><span><i style="background:${COLOURS.sugar}"></i>tap YOUR half: sugar</span><span><i style="background:${COLOURS.bitter}"></i>tap THEIR half: bitter (spoils a drop)</span><span><i style="background:#dc2626"></i>spider catch on your half: their point</span></div>`;
+    <div class="legend"><span><i style="background:${COLOURS.sugar}"></i>tap YOUR ${ground}: sugar</span><span><i style="background:${COLOURS.bitter}"></i>tap ${quad ? "ANY OTHER quadrant" : "THEIR half"}: bitter (spoils a drop)</span><span><i style="background:#dc2626"></i>spider catch on your ${ground}: ${quad ? "a point for everyone else" : "their point"}</span><span><i style="background:#e8ecf1;opacity:.4"></i>a drop inside the ring startles it: lure from outside</span></div>`;
   const mini = $("mini");
   mini.addEventListener("pointerdown", (e) => {
     e.preventDefault(); if (!state) return;
     const r = mini.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width * state.arena.w, y = (1 - (e.clientY - r.top) / r.height) * state.arena.h;
-    const half = x < state.arena.w / 2 ? "left" : "right", kind = half === side ? "sugar" : "bitter";
+    const kind = zoneAt(x, y) === side ? "sugar" : "bitter";
     if (Date.now() < cool[kind]) { buzz(10); return; }
     sock.send({ type: "drop", x, y, kind }); buzz(40); cool[kind] = Date.now() + (kind === "sugar" ? 2000 : 4000);
   });
@@ -117,8 +134,12 @@ function drawMini() {
   const ctx = mini.getContext("2d"), aw = state.arena.w, ah = state.arena.h, s = mini.width / aw, w = state.world;
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#11161f"; ctx.fillRect(0, 0, mini.width, mini.height);
   ctx.setTransform(s, 0, 0, -s, 0, mini.height);
-  ctx.fillStyle = side === "left" ? "rgba(59,130,246,.18)" : "rgba(245,158,11,.18)"; ctx.fillRect(side === "left" ? 0 : aw / 2, 0, aw / 2, ah);
-  ctx.strokeStyle = "#374151"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(aw / 2, 0); ctx.lineTo(aw / 2, ah); ctx.stroke();
+  const mine = zoneOf(side); if (!mine) return;
+  const [x0, y0, x1, y1] = mine.rect;
+  ctx.globalAlpha = 0.18; ctx.fillStyle = mine.colour; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); ctx.globalAlpha = 1;
+  ctx.strokeStyle = "#374151"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(aw / 2, 0); ctx.lineTo(aw / 2, ah);
+  if (state.heat.mode === "quad") { ctx.moveTo(0, ah / 2); ctx.lineTo(aw, ah / 2); }
+  ctx.stroke();
   for (const d of w.drops) { ctx.fillStyle = d.bitter ? COLOURS.bitter : COLOURS.sugar; ctx.beginPath(); ctx.arc(d.x, d.y, 24, 0, Math.PI * 2); ctx.fill(); }
   for (const sp of w.spiders || []) {      // the sight ring follows the SPIDER, not its lair: they wander
     ctx.strokeStyle = "rgba(239,68,68,.35)"; ctx.lineWidth = 6;
@@ -126,16 +147,30 @@ function drawMini() {
     ctx.fillStyle = sp.state === "hunt" ? "#dc2626" : "#991b1b";
     ctx.beginPath(); ctx.arc(sp.x, sp.y, 34, 0, Math.PI * 2); ctx.fill();
   }
-  const f = state.fly; ctx.translate(f.x, f.y); ctx.rotate(f.heading);
+  const f = state.fly;
+  // the startle ring: a drop landing inside it makes the fly jump away (senses.py STARTLE_R). Lure from outside it.
+  ctx.strokeStyle = "rgba(232,236,241,.3)"; ctx.lineWidth = 4; ctx.setLineDash([12, 12]);
+  ctx.beginPath(); ctx.arc(f.x, f.y, w.startle_r || 80, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  ctx.translate(f.x, f.y); ctx.rotate(f.heading);
   ctx.fillStyle = "#e8ecf1"; ctx.beginPath(); ctx.moveTo(40, 0); ctx.lineTo(-30, 26); ctx.lineTo(-30, -26); ctx.closePath(); ctx.fill();
   for (const k of ["sugar", "bitter"]) { const el = document.getElementById("cool-" + k); if (el) el.style.width = Math.max(0, Math.min(100, 100 - (cool[k] - Date.now()) / (k === "sugar" ? 20 : 40))) + "%"; }
-  const other = side === "left" ? "right" : "left", h = state.heat;
-  const ms = document.getElementById("my-score"); if (ms) { ms.textContent = w.score[side]; document.getElementById("their-score").textContent = w.score[other]; }
+  const h = state.heat, others = h.zones.filter((z) => z.id !== side);
+  const ms = document.getElementById("my-score");
+  if (ms) {
+    ms.textContent = w.score[side];
+    document.getElementById("their-score").innerHTML = others.length === 1 ? `THEM <b>${w.score[others[0].id]}</b>` :
+      others.map((z) => `<b style="color:${z.colour};margin-left:10px">${w.score[z.id]}</b>`).join("");
+  }
   const clock = document.getElementById("clock");
   if (clock) clock.innerHTML = h.phase === "playing" ? `<b>${Math.ceil(h.time_left)}</b> s` : h.phase === "countdown" ? `<b>${Math.ceil(h.time_left)}</b>` :
-    h.phase === "over" ? (h.winner === side ? "YOU WIN" : h.winner === "draw" ? "DRAW" : "THEY WIN") : "waiting for the host";
+    h.phase === "over" ? result(h) : "waiting for the host";
 }
 requestAnimationFrame(drawMini);
+function result(h) {
+  if (h.winner === side) return "YOU WIN";
+  if (h.winner === "draw") return "DRAW";
+  return h.mode === "quad" ? `${h.players[h.winner] || zoneOf(h.winner)?.label || "?"} WINS` : "THEY WIN";
+}
 function banner(text, ms) { const b = $("banner"); b.textContent = text; b.classList.add("show"); setTimeout(() => b.classList.remove("show"), ms); }
 
 // ---------------------------------------------------------------- sense roles (demo mode)
@@ -198,11 +233,13 @@ sock = connect({
   onMessage(m) {
     if (m.type === "state") {
       state = m;
+      renderSeats(m.heat);
+      if (side && !zoneOf(side)) { side = null; lastPhase = null; show("pick"); }   // the host switched duel <-> 4 players
       const ph = m.heat.phase;
       if (ph !== lastPhase && side) {
         if (ph === "countdown") banner("GET READY", 2500);
         if (ph === "playing") banner("GO!", 900);
-        if (ph === "over") banner(m.heat.winner === side ? "YOU WIN!" : m.heat.winner === "draw" ? "DRAW" : "THEY WIN", 4000);
+        if (ph === "over") banner(result(m.heat) + (m.heat.winner === side ? "!" : ""), 4000);
         lastPhase = ph;
       }
     }

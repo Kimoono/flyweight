@@ -1,6 +1,8 @@
 """Builds data/positions.bin for the brain view: float32 (x, y, z) per model neuron, in the
 same index order as the simulator (Completeness_783.csv), NaN where the annotation has no
-position. Positions come from the FlyWire annotations (Schlegel et al. 2024), in nm."""
+position. Positions come from the FlyWire annotations (Schlegel et al. 2024) in FlyWire VOXEL
+coordinates, not nm: a voxel is 4 x 4 x 40 nm, so z is 10x coarser than x and y (the file spans
+203,712 x 97,882 x 6,952 voxels = 815 x 391 x 278 um). The 3D brain view scales z by 10."""
 from pathlib import Path
 import numpy as np, pandas as pd
 

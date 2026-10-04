@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Fly by Committee — host</title>
+<title>Flyweight — host</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root { --bg: #0b0e14; --panel: #151a23; --ink: #e8ecf1; --dim: #9aa3ad; }
@@ -26,6 +26,12 @@
     <button id="resetlb" style="background:#374151;color:#e8ecf1">RESET LEADERBOARD</button>
     <span class="status" id="heat-status"></span>
   </div>
+  <div class="bar" style="margin:0 0 8px">
+    <span style="color:var(--dim);font-size:14px">GAME</span>
+    <button class="mode" data-mode="duel">DUEL · 2 players</button>
+    <button class="mode" data-mode="quad">4 PLAYERS · quadrants</button>
+    <span class="status">switching clears the seats (only between heats)</span>
+  </div>
   <div id="seats" style="font-size:16px;margin:6px 0"></div>
   <div id="lb" class="log"></div>
 </div>
@@ -39,12 +45,19 @@ const sock = connect({
 });
 for (const [id, action] of [["start", "start"], ["stop", "stop"], ["clear", "clear_players"], ["resetlb", "reset_scores"]])
   $(id).addEventListener("click", () => { if (action === "reset_scores" && !confirm("Reset the leaderboard?")) return; sock.send({ type: "heat", action }); });
+for (const b of document.querySelectorAll(".mode")) b.addEventListener("click", () => sock.send({ type: "heat", action: b.dataset.mode }));
 let lastHeat = 0;
 function renderHeat(m) {
   if (Date.now() - lastHeat < 250) return; lastHeat = Date.now();
   const h = m.heat, sc = m.world.score;
-  $("heat-status").textContent = h.phase === "playing" ? `playing · ${Math.ceil(h.time_left)} s left · ${sc.left} – ${sc.right}` : h.phase === "countdown" ? "countdown" : h.phase === "over" ? `over · ${h.winner}` : "lobby";
-  $("seats").innerHTML = `<span style="color:#3b82f6;font-weight:800">LEFT</span> ${h.players.left || "<i style='color:#6b7280'>empty seat</i>"} &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:800">RIGHT</span> ${h.players.right || "<i style='color:#6b7280'>empty seat</i>"}`;
+  const busy = h.phase === "playing" || h.phase === "countdown";
+  for (const b of document.querySelectorAll(".mode")) {
+    const on = b.dataset.mode === h.mode;
+    b.style.background = on ? "#e8ecf1" : "#374151"; b.style.color = on ? "#000" : "#e8ecf1"; b.disabled = busy && !on; b.style.opacity = b.disabled ? .4 : 1;
+  }
+  const scores = h.zones.map((z) => sc[z.id]).join(" – ");
+  $("heat-status").textContent = h.phase === "playing" ? `playing · ${Math.ceil(h.time_left)} s left · ${scores}` : h.phase === "countdown" ? "countdown" : h.phase === "over" ? `over · ${h.winner}` : "lobby";
+  $("seats").innerHTML = h.zones.map((z) => `<span style="color:${z.colour};font-weight:800">${z.label}</span> ${h.players[z.id] || "<i style='color:#6b7280'>empty seat</i>"}`).join(" &nbsp;·&nbsp; ");
   $("lb").textContent = h.leaderboard.length ? "Leaderboard: " + h.leaderboard.map((r) => `${r.name} ${r.wins}W/${r.points}pts`).join(", ") : "No heats played yet. Players pick a seat on their phone, then START HEAT.";
 }
 </script>

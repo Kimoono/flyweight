@@ -34,6 +34,10 @@ OUTPUTS = {
     "escape_aux": (ct.isin(["DNp02", "DNp04", "DNp11"]), "Other looming-escape descending neurons"),
     "backward": (ct == "MDN", "Moonwalker: walk backwards (MDN)"),
     "feed":     (ct == "CB0701", "Proboscis extension motor neuron MN9 (annotated CB0701)"),
+    # Measured 23 Sep 2026 (findings, "DISGUST"): the strongest cells downstream of the bitter taste
+    # neurons, ~150 Hz on bitter 60 Hz, 0 on sugar / eyes / shadow. No published function: the
+    # "disgust" reading is ours, so only the plain label says so; the neuron name is CB0159.
+    "disgust":  (ct == "CB0159", "Bitter taste interneuron CB0159 (fires only on bitter; function not published)"),
     # The whole output cable, not a hand-picked cell type: body.py takes the fly's walking speed
     # from the mean rate of this population, so "how fast" is the brain's decision and not ours.
     "descending": (a.super_class == "descending", "Every command leaving the brain (descending neurons)"),

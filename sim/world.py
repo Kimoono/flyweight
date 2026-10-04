@@ -2,7 +2,9 @@
 The fly's decisions come from brain.py via body.py; what the fly senses comes from senses.py.
 
 Duel rules: the arena has a LEFT and a RIGHT half. A drop eaten on a half scores for that
-half. Drops can be spoiled with bitter (the fly walks up, tastes, refuses, leaves)."""
+half. Drops can be spoiled with bitter (the fly walks up, tastes, refuses, leaves).
+Four-player mode ("quad"): the same rules on four quadrants, one player each. A catch on your
+quadrant is a point for every other player (in a duel that is the one opponent)."""
 import math, random
 from dataclasses import dataclass, field
 
@@ -19,6 +21,14 @@ N_DROPS = 0            # drops the world spawns by itself (0 in a duel: players 
 MAX_DROPS = 10
 SPOILED_S = 10.0       # a spoiled drop disappears after this long
 BITTER_R = 70.0        # px: a bitter tap this close to a sugar drop spoils it, else it makes a bitter puddle
+
+# Zones: who owns which ground. "duel" = two halves, "quad" = four quadrants (y is up: "t" = top).
+MODES = {"duel": ("left", "right"), "quad": ("tl", "tr", "bl", "br")}
+# In quad mode four players drop sugar every 2 s, which would fill MAX_DROPS in ~5 s and let
+# everyone's taps evict everyone else's drops. So each player keeps at most OWNER_CAP standing
+# sugar drops (a new one replaces their own oldest) and the arena holds more in total.
+OWNER_CAP = {"duel": None, "quad": 3}
+MAX_DROPS_MODE = {"duel": MAX_DROPS, "quad": 16}
 
 # The spider is an ambush predator with a lair. It waits at home, charges when the fly comes
 # inside its sight, gives up when the fly gets away, and walks back home. There is one per half
@@ -64,6 +74,7 @@ class Spider:
     pause: float = 0.0         # how long this sit-still lasts
     tx: float = 0.0            # where it is strolling to
     ty: float = 0.0
+    heading: float = 0.0       # rad, maths convention like the fly: the way it last stepped
 
     @property
     def closing(self):
@@ -73,6 +84,7 @@ class Spider:
         d = math.hypot(x - self.x, y - self.y)
         if d < 1e-6:
             return d
+        self.heading = math.atan2(y - self.y, x - self.x)
         step = min(speed * dt, d)
         self.x += (x - self.x) / d * step; self.y += (y - self.y) / d * step
         return d
@@ -86,6 +98,7 @@ class World:
     fly_dead: float = 0.0
     eating: float = 0.0
     hunt_quiet: float = 0.0         # s left of the no-charging window
+    mode: str = "duel"              # a key of MODES
     score: dict = field(default_factory=lambda: {"left": 0, "right": 0})
     caught: int = 0
     events: list = field(default_factory=list)
@@ -97,22 +110,33 @@ class World:
             self.add_drop(self.rng.uniform(100, W - 100), self.rng.uniform(100, H - 100))
 
     # ---- drops
-    def add_drop(self, x, y, bitter=False):
+    def add_drop(self, x, y, bitter=False, owner=None):
         """A sugar drop, or (bitter=True) a bitter tap: spoils a sugar drop within BITTER_R,
-        otherwise leaves a bitter puddle. Returns what happened."""
+        otherwise leaves a bitter puddle. Returns what happened. owner = the zone of the player
+        who dropped it (for the per-player cap in quad mode)."""
         x, y = min(max(x, 20), W - 20), min(max(y, 20), H - 20)
         if bitter:
             near = [d for d in self.drops if d["sugar"] and not d["bitter"] and math.hypot(d["x"] - x, d["y"] - y) < BITTER_R]
             if near:
                 d = min(near, key=lambda d: math.hypot(d["x"] - x, d["y"] - y)); d["bitter"] = True; d["age"] = 0.0
                 return "spoiled"
-        if len(self.drops) >= MAX_DROPS:
+        cap = OWNER_CAP[self.mode]
+        if cap and owner and not bitter:
+            mine = [d for d in self.drops if d.get("owner") == owner and d["sugar"] and not d["bitter"]]
+            if len(mine) >= cap:
+                self.drops.remove(mine[0])
+        if len(self.drops) >= MAX_DROPS_MODE[self.mode]:
             self.drops.pop(0)
-        self.drops.append({"x": x, "y": y, "bitter": bitter, "sugar": not bitter, "age": 0.0})
+        self.drops.append({"x": x, "y": y, "bitter": bitter, "sugar": not bitter, "age": 0.0, "owner": owner})
         return "bitter" if bitter else "sugar"
 
     def drop_xy(self):
         return [(d["x"], d["y"]) for d in self.drops]
+
+    def splashes(self, max_age):
+        """Drops that landed less than max_age s ago, as (x, y, age): senses.py lets them loom on
+        the fly (a spoiling bitter tap resets the age, so it splashes too)."""
+        return [(d["x"], d["y"], d["age"]) for d in self.drops if d["age"] <= max_age]
 
     def on_drop(self, fly):
         for d in self.drops:
@@ -120,9 +144,16 @@ class World:
                 return d
         return None
 
-    @staticmethod
-    def half(x):
+    def zone(self, x, y):
+        """Whose ground (x, y) is: a key of self.score."""
+        if self.mode == "quad":
+            return ("t" if y >= H / 2 else "b") + ("l" if x < W / 2 else "r")
         return "left" if x < W / 2 else "right"
+
+    def set_mode(self, mode):
+        """Switch between duel and quad; clears the score (call between heats)."""
+        self.mode = mode
+        self.score = {z: 0 for z in MODES[mode]}
 
     # ---- spider
     @property
@@ -144,7 +175,8 @@ class World:
         side wall. Deterministic, so both halves are mirror images and players can learn the map.
         The outer quarters are then the dangerous ground and the middle ~680 px is the safe
         corridor, which is also the contested one. With N_SPIDERS = 1 the single lair goes back on
-        the centre line at a random height."""
+        the centre line at a random height. In quad mode the lairs stay put: they lie on the
+        horizontal border, so each spider threatens its two quadrants equally."""
         self.spiders = []
         if N_SPIDERS == 1:
             y = self.rng.choice([H * 0.3, H * 0.7])
@@ -161,7 +193,7 @@ class World:
     def reset_round(self, fly):
         """New heat: clear drops, fly to the centre, spider to a fresh lair on the centre line."""
         self.drops = []; self.eating = 0.0; self.fly_dead = 0.0; self.events = []; self.hunt_quiet = 0.0
-        self.score = {"left": 0, "right": 0}; self.caught = 0
+        self.score = {z: 0 for z in MODES[self.mode]}; self.caught = 0
         fly.x, fly.y, fly.heading, fly.turn_rate, fly.cooldown = W / 2, H / 2, self.rng.uniform(-math.pi, math.pi), 0.0, 0.0
         self.set_lairs()
 
@@ -188,7 +220,7 @@ class World:
         elif fly.feeding:
             self.eating += dt
             if self.eating >= EAT_S:
-                self.drops.remove(d); self.score[self.half(d["x"])] += 1; self.eating = 0.0
+                self.drops.remove(d); self.score[self.zone(d["x"], d["y"])] += 1; self.eating = 0.0
                 self.events.append((t, "EAT"))
                 if len([x for x in self.drops if x["sugar"]]) < N_DROPS:
                     self.add_drop(self.rng.uniform(100, W - 100), self.rng.uniform(100, H - 100))
@@ -210,7 +242,9 @@ class World:
                 dist = sp.move_toward(fly.x, fly.y, POUNCE_SPEED if dist < POUNCE_R else CHARGE_SPEED, dt)
                 if dist < CATCH_R:
                     self.caught += 1; self.events.append((t, "CAUGHT"))
-                    self.score["right" if self.half(fly.x) == "left" else "left"] += 1   # caught on your half = their point
+                    here = self.zone(fly.x, fly.y)                   # caught on your ground = a point for everyone else
+                    for z in self.score:
+                        self.score[z] += z != here
                     self.fly_dead = FLY_DEAD_S; self.eating = 0.0
                     sp.state, sp.timer = "return", 0.0
                     self.hunt_quiet = QUIET_S

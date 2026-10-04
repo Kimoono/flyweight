@@ -1708,6 +1708,15 @@
    ],
    "label": "Proboscis extension motor neuron MN9 (annotated CB0701)"
   },
+  "disgust": {
+   "left": [
+    "720575940620553094"
+   ],
+   "right": [
+    "720575940614635175"
+   ],
+   "label": "Bitter taste interneuron CB0159 (fires only on bitter; function not published)"
+  },
   "descending": {
    "left": [
     "720575940624402173",
