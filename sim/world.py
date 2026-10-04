@@ -32,7 +32,7 @@ MAX_DROPS_MODE = {"duel": MAX_DROPS, "quad": 16}
 
 # The spider is an ambush predator with a lair. It waits at home, charges when the fly comes
 # inside its sight, gives up when the fly gets away, and walks back home. There is one per half
-# (Kim, 22 Sep 2026), so the halves are the dangerous ground and the centre line is the corridor:
+# (Kimoono, 22 Sep 2026), so the halves are the dangerous ground and the centre line is the corridor:
 # a charge pushes the fly into the other half or against a wall, and both players have a predator
 # to bait it toward. N_SPIDERS = 1 puts a single lair back on the centre line.
 N_SPIDERS = 2          # one lair per half
@@ -42,7 +42,7 @@ POUNCE_R = 130.0       # px: inside this the spider lunges
 POUNCE_SPEED = 250.0   # px/s during the lunge: a race against the fly's escape reflex
 RETURN_SPEED = 45.0    # px/s walking home
 GIVE_UP_R = 420.0      # px: fly this far away while hunting = the spider gives up
-# How far a spider strays from its lair. Requirement (Kim, 22 Sep 2026): NO point of the arena may
+# How far a spider strays from its lair. Requirement (Kimoono, 22 Sep 2026): NO point of the arena may
 # be permanently safe, i.e. every point must fall inside some spider's sight ring at some moment.
 # Coverage reach = WANDER_R + SIGHT_R, and the hardest points are the middle of the top and bottom
 # edges, (W/2, 0) and (W/2, H), which lie hypot(3W/8, H/2) from either lair. So the radius is
@@ -57,7 +57,7 @@ HUNT_MAX_S = 6.0       # s: a charge never lasts longer than this
 QUIET_S = 3.0          # s after ANY hunt ends before another may start. With the board fully
                        # covered, a fly escaping one ring is usually already inside the other, so
                        # without this the two spiders hand it back and forth and the fly is pinned
-                       # (Kim, playing 22 Sep 2026). Only one spider may hunt at a time, and after a
+                       # (Kimoono, playing 22 Sep 2026). Only one spider may hunt at a time, and after a
                        # hunt ends nobody charges for QUIET_S: pressure comes in waves.
 CATCH_R = 30.0
 FLY_DEAD_S = 1.5       # the fly lies still after a catch, then respawns
@@ -171,7 +171,7 @@ class World:
         sp.ty = min(max(sp.home_y + r * math.sin(a), 20), H - 20)
 
     def set_lairs(self):
-        """On the grid (Kim, 22 Sep 2026): vertically centred, an eighth of the width in from each
+        """On the grid (Kimoono, 22 Sep 2026): vertically centred, an eighth of the width in from each
         side wall. Deterministic, so both halves are mirror images and players can learn the map.
         The outer quarters are then the dangerous ground and the middle ~680 px is the safe
         corridor, which is also the contested one. With N_SPIDERS = 1 the single lair goes back on

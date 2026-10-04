@@ -127,7 +127,7 @@ sides); random damage is tolerated up to ~15% and collapses around 20%, so a Jen
 "random 5%" pulls lasts 3-4 turns. A check takes ~1.6 s of wall time and pauses the game.
 
 ## Does the fly ever walk? (22 Sep 2026)
-Kim: "the graphic shows WALK, but is this ever triggered?" No. The beamer's WALK label read
+Kimoono: "the graphic shows WALK, but is this ever triggered?" No. The beamer's WALK label read
 DNp09, and nothing the game feeds the brain drives it. Mean Hz over 400 ms from a fresh brain:
 
 | stimulus | turn | turn_aux | DNp09 | escape | escape_aux | backward (MDN) | feed | **DNg100** |
@@ -157,7 +157,7 @@ to the game's own senses: a drop in view 39 Hz, a moving spider 54, looming 26, 
 So `walk` now means DNg100 and the old DNp09 is `walk_aux`.
 
 ## Brain-driven movement (22 Sep 2026)
-Kim: "most of its movement is programmed. I want the brain to control it." `BASE_SPEED = 40` px/s
+Kimoono: "most of its movement is programmed. I want the brain to control it." `BASE_SPEED = 40` px/s
 of unconditional amble is gone; forward speed is now `WALK_GAIN` (1.0) px/s per Hz of DNg100,
 smoothed over 0.25 s and capped at 70 px/s (the spider's charge speed - at 110 px/s the chase
 stopped being a chase). No command from the brain, no movement.
@@ -187,7 +187,7 @@ found the rhythm comes from three interneurons, and that driving DNg100 in a cor
 does not produce a tripod gait without proprioception and biomechanics.
 
 ## The compass does not hold (22 Sep 2026): no working memory either
-Kim asked whether the brain can remember anything. Two tests. (1) Switch a stimulus off: activity
+Kimoono asked whether the brain can remember anything. Two tests. (1) Switch a stimulus off: activity
 is at a tenth one 50 ms window later and at exactly zero in the next one, for eye, shadow and
 sugar input alike - no after-image, no persistence anywhere in 138,639 neurons. (2) The head-
 direction ring attractor, the fly's compass and the one memory that needs no plasticity: all 47
@@ -206,7 +206,7 @@ the compass will not hold a heading. Consistent with the Jenga result that remov
 Kenyon cells of the memory centre breaks no reflex.
 
 ## Two spiders, one per half (22 Sep 2026)
-Kim's idea, and it costs nothing: `world.Spider` is a dataclass now and `World.spiders` a list,
+Kimoono's idea, and it costs nothing: `world.Spider` is a dataclass now and `World.spiders` a list,
 each with its own lair, state machine and timer, hunting independently (a catch breaks the loop so
 two cannot claim the same fly). Lairs are on the grid - vertically centred, an eighth of the width
 in from each side wall, i.e. (200, 450) and (1400, 450) - deterministic, so the halves mirror each
@@ -276,7 +276,7 @@ for a tick. Dead ahead (|bearing| < 0.15 rad) excites neither eye because the tw
 pathways are not mirror images (trap 2).
 
 ## Circling (22 Sep 2026): drops around the fly and it turns on the spot
-Kim, clicking around with two /play windows: "when placing drops around the fly it often
+Kimoono, clicking around with two /play windows: "when placing drops around the fly it often
 starts circling on the spot". Reproduced headless (4 drops at 250 px in a ring, 15 s):
 
 | eye encoding | both eyes driven | steering sign flips | reaches a drop |
@@ -303,7 +303,7 @@ Not fixed, and still true: the fly meanders (about 3 full turns of accumulated h
 and a single drop 300 px away takes 11-14 s to reach. Single runs are noisy: the brain is
 stochastic, and these are one run per variant.
 
-## Playtest fixes (20 Sep 2026, after Kim watched world mode)
+## Playtest fixes (20 Sep 2026, after Kimoono watched world mode)
 - **Left-right flicker.** With drops on both sides both DNa02 neurons fire and the steering
   difference flips sign ~6 times a second (measured: 96 flips in 15 s in a two-drop scene);
   the strong left pathway makes the left eye look like it is blinking. The brain has no
@@ -320,13 +320,13 @@ stochastic, and these are one run per variant.
 - **Death.** A catch now freezes the fly on its back for 1.5 s, then respawns it away from the
   spider, which rests 4.5 s.
 - 120 s re-run: connected 5 drops / 2 catches / 35 jumps, blind 0 / 3 / 0.
-- **Ambush spider** (Kim: "the spider should not always see the fly"). The spider now waits or
+- **Ambush spider** (Kimoono: "the spider should not always see the fly"). The spider now waits or
   wanders at 15 px/s, charges at 70 px/s when the fly is inside its 260 px sight, gives up when
   the fly is 420 px away or after 6 s, and rests 3 s. Its sight ring is always drawn: faint
   while waiting, red and filled while hunting. `World.set_spider_target(x, y)` is the hook for
   the spectator vote. 120 s run: 2 encounters (1 catch, 1 escape), 7 jumps instead of 35.
   Drops eaten per 120 s run vary 2-9 between runs; single runs are noisy.
-- **Jump direction** (Kim: the fly jumped straight into the spider, endless "GOT YOU"). The
+- **Jump direction** (Kimoono: the fly jumped straight into the spider, endless "GOT YOU"). The
   brain lateralises the threat (shadow left: DNp01 172/108, DNp02/04/11 170/0) but the takeoff
   direction is computed in the legs/ventral nerve cord, which the simulated brain does not
   include, so `body.py` now jumps ~70 deg away from the side whose escape neurons fire more,
@@ -334,7 +334,7 @@ stochastic, and these are one run per variant.
   old rule 12/12 caught, new rule 0/12 caught (headings after the jump 47-98 deg off the path).
 
 ## MaleCNS drop-in check (20 Sep 2026): a brain WITH a ventral nerve cord
-Kim asked whether a whole-nervous-system model exists. It does: Janelia FlyEM MaleCNS v1.0
+Kimoono asked whether a whole-nervous-system model exists. It does: Janelia FlyEM MaleCNS v1.0
 (brain + VNC of one male, 165,122 traced neurons, released June 2026, **CC-BY**) and the
 FlyWire BANC (female, 188k neurons, Nov 2025). `sim/build_malecns.py` downloads the MaleCNS
 flat tables (no login), builds a cache in our format (ACh +, GABA/Glu -, amines dropped,
@@ -365,7 +365,7 @@ the jump muscle. What it does NOT give us:
   have to be re-measured (pharyngeal taste showed a burst at 5 s).
 Verdict: keep FlyWire for the workshop. MaleCNS is a documented, licence-friendly upgrade
 path and a good debrief line ("the legs are in this one, and it still needs a body").
-- **The spider could never catch a fly in the open** (Kim: only at the walls). Two changes:
+- **The spider could never catch a fly in the open** (Kimoono: only at the walls). Two changes:
   looming now grows with proximity in `senses.py` (0 at 240 px, full at 70 px), which is how a
   looming object drives a real eye and makes the escape a race instead of a fixed early
   trigger; and the spider lunges inside 130 px. Open-field ambush, 12 seeds each:
@@ -381,7 +381,7 @@ path and a good debrief line ("the legs are in this one, and it still needs a bo
   charge only interrupts the meal. Rule added: a catch on your half is the opponent's point.
 
 ## DISGUST: bitter has a readout after all (23 Sep 2026)
-Kim: "is there any signal from the brain when the fly is on a bitter drop?" The five labels
+Kimoono: "is there any signal from the brain when the fly is on a bitter drop?" The five labels
 said no: bitter 60 Hz leaves turn, walk, escape and feed at 0 (table above), so bitter showed
 only as an absence (HUNGRY going dark, DNg100 = 0 with nothing in view). Measured 1 s from a
 fresh brain, bitter both sides at the game's 60 Hz: 65 taste cells + **43 downstream neurons**,
@@ -401,7 +401,7 @@ CB0159 does in a real fly; "disgust" is our name for "bitter interneuron that fi
 bitter". The neurons.json label and any nerd mode must show the cell name, not the claim.
 
 ## Splash startle (24 Sep 2026): a drop dumped on the fly makes it jump
-Kim: drops placed on or just in front of the fly keep it on one half. Reproduced headless: a bot
+Kimoono: drops placed on or just in front of the fly keep it on one half. Reproduced headless: a bot
 that drops sugar on the fly every 2 s (the cooldown) scores a point every 2 s and the fly never
 moves, because the nearest drop always wins its attention and there is no travel. Luring from
 ahead scores half that. Fix, in `senses.py` only: a drop that landed less than 0.15 s ago within
@@ -422,7 +422,7 @@ bot only, two wandering spiders, 4 seeds each:
 Farming is dead (a factor 11), and it gets the fly caught more often, because a pinball fly
 lands in spider rings.
 
-Kim: the 150 px ring looks too large. Sweep, same bot, 3 seeds, the bot either on the fly or
+Kimoono: the 150 px ring looks too large. Sweep, same bot, 3 seeds, the bot either on the fly or
 just outside the ring:
 
 | ring (full-rate inside) | on the fly | just outside the ring |

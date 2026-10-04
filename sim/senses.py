@@ -48,7 +48,7 @@ SUGAR_HZ = 40.0        # findings "Sustained input": >= 60 Hz held for seconds -
 BITTER_HZ = 60.0
 STARTLE_R = 80.0       # px: a drop landing closer than this startles the fly (the lure boundary; the
                        # phone draws it around the fly). About the fly plus a drop's width. 150 looked
-                       # too big (Kim); measured 80/100/150 all kill farming, see findings.
+                       # too big (Kimoono); measured 80/100/150 all kill farming, see findings.
 STARTLE_NEAR = 30.0    # px: full-rate looming from here inwards
 STARTLE_S = 0.15       # s: a landed drop looms this long (3-4 ticks; the escape needs ~50 ms)
 

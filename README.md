@@ -146,13 +146,13 @@ documented in `docs/findings.md`.
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Used as is.
 - **Fly model**: based on ["Муха"](https://sketchfab.com/3d-models/c8988274b3fc41cf9792032bf1dc657a)
   ("Fly") by [MUD](https://sketchfab.com/Jguyfioy), licensed under
-  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Animations added by Kim De Vylder.
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Animations added by Kimoono.
 - **three.js**: MIT, vendored in `web/static/vendor/three/`.
-- **Sound effects**: in `web/static/audio/`, recorded by Kim De Vylder, except
+- **Sound effects**: in `web/static/audio/`, recorded by Kimoono, except
   `Wilhelm_scream.mp3`, the well-known film stock effect, which is not covered by this
   project's licence.
 
 The project's own code and the sound recordings are free to use, change and
 share for any noncommercial purpose, but not to sell: [PolyForm Noncommercial 1.0.0](LICENSE.md).
 
-Required Notice: Copyright 2026 Kim De Vylder
+Required Notice: Copyright 2026 Kimoono
